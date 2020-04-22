@@ -152,9 +152,12 @@ class OmsimWrapper:
 
 
 if __name__ == "__main__":
-    omsim_exec_path = "/Users/akdel/PycharmProjects/omsim/omsim/src/omsim/__main__.py"
-    omsim_param_template_path = "/Users/akdel/PycharmProjects/omsim/test/ecoli/template.xml"
-    omsim_enzyme_path = "/Users/akdel/PycharmProjects/omsim/test/ecoli/enzymes.xml"
+    import json
+    config_path = "config.json"
+    parameters = json.loads(config_path)
+    omsim_exec_path = parameters["omsim_exec_path"]
+    omsim_param_template_path = parameters["omsim_template_path"]
+    omsim_enzyme_path = parameters["omsim_enzyme_path"]
 
     fasta = Fasta("/Users/akdel/PycharmProjects/OptiDiff/S288C_reference_sequence_R64-2-1_20150113.fsa")
     print(fasta.fasta_array.shape)
