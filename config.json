@@ -1,5 +1,5 @@
 {
-  "omsim_exec_path":  "",
-  "omsim_template_path":  "",
-  "omsim_enzyme_path": ""
+  "omsim_exec_path":  "~/omsim/omsim/src/omsim/__main__.py",
+  "omsim_template_path":  "data/templates/template.xml",
+  "omsim_enzyme_path": "data/templates/enzymes.xml"
 }

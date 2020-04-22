@@ -154,12 +154,12 @@ class OmsimWrapper:
 if __name__ == "__main__":
     import json
     config_path = "config.json"
-    parameters = json.loads(config_path)
+    parameters = json.loads(open(config_path, "r").read())
     omsim_exec_path = parameters["omsim_exec_path"]
     omsim_param_template_path = parameters["omsim_template_path"]
     omsim_enzyme_path = parameters["omsim_enzyme_path"]
 
-    fasta = Fasta("/Users/akdel/PycharmProjects/OptiDiff/S288C_reference_sequence_R64-2-1_20150113.fsa")
+    fasta = Fasta("data/genomes/yeast.fasta")
     print(fasta.fasta_array.shape)
     fasta.write_all_chr(fname="temp.fasta", lim=5000000) # concats chromosomes into a single fasta entry
     fasta = Fasta("temp.fasta") # reloads fasta
@@ -211,4 +211,4 @@ if __name__ == "__main__":
         print(svd_fasta.fasta_array.shape)
         print(svd_fasta.tracked_changes)
         # svd_fasta.write(fname=f"simulated_svd2/temp_svd_del{svd_fasta.tracked_changes[0][0]}-{svd_fasta.tracked_changes[0][1]}-{svd_fasta.tracked_changes[0][-1]}.fasta")
-        svd_fasta.write(fname=f"simulated_svd/temp_svd_dup{svd_fasta.tracked_changes[0][0]}-{svd_fasta.tracked_changes[0][1]}-{svd_fasta.tracked_changes[0][2]}-{svd_fasta.tracked_changes[0][-1]}.fasta")
+        svd_fasta.write(fname=f"data/SVs/temp_svd_dup{svd_fasta.tracked_changes[0][0]}-{svd_fasta.tracked_changes[0][1]}-{svd_fasta.tracked_changes[0][2]}-{svd_fasta.tracked_changes[0][-1]}.fasta")
