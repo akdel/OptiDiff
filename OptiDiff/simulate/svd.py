@@ -201,9 +201,9 @@ if __name__ == "__main__":
     # svd_fasta.write(
     #     fname=f"deletion_svd_low/temp_svd_del{svd_fasta.tracked_changes[0][0]}-{svd_fasta.tracked_changes[0][1]}-retry-del.fasta")
     # exit()
-    for _ in range(5):
+    for _ in range(25):
         svd_fasta = SvdFromFastaArray(fasta.fasta_array, fasta.fasta_digestion_array, omsim_exec_path, omsim_enzyme_path,
-                                      omsim_param_template_path, cov=400)
+                                      omsim_param_template_path, cov=600)
         print(svd_fasta.fasta_array.shape)
         svd_fasta.copy_paste(length=500000)
         # svd_fasta.introduce_deletion_label_based(np.random.choice([-1, 0, 1, 2, 3]))
