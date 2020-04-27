@@ -18,6 +18,8 @@ class Seeder(bts.CmapToSignal, bts.BnxToSignal):
         self.create_chr_segments(length=length)
         self.mol_compress(length=length, nbits=n_bits)
         self.chr_compress(length=length, nbits=n_bits)
+        self.matched_molecule_info = dict()
+        self.matched_molecule_info_rev = dict()
 
     def get_mol_bits(self, mol_id):
         start, end = self.molecule_segment_indices[mol_id]
@@ -89,6 +91,18 @@ class Seeder(bts.CmapToSignal, bts.BnxToSignal):
                            matched_segments[i + 1]))
             else:
                 continue
+        for n1, n2 in edges:
+            n1 = self.position_index[1][n1]
+            n2 = self.position_index[1][n2]
+            if n1 in self.matched_molecule_info:
+                self.matched_molecule_info[n1].append(mol_id)
+            else:
+                self.matched_molecule_info[n1] = [mol_id]
+            if n2 in self.matched_molecule_info:
+                self.matched_molecule_info[n2].append(mol_id)
+            else:
+                self.matched_molecule_info[n2] = [mol_id]
+        self.matched_molecule_info_rev[mol_id] = {self.position_index[1][n1] for (n1, n2) in edges} | {self.position_index[1][n2] for (n1, n2) in edges}
         return edges
 
     def cut_molecules_at_loc(self, mol_id, loc_id, reference_mol=False, thr=1):
@@ -465,3 +479,19 @@ if __name__ == "__main__":
                    list_of_svd_bnx_files, temp_folder_path, pipeline_arguments_path)
     bng.collect_all_smap()
     pass
+
+
+class Nodes:
+    def __init__(self, node_properties):
+        self.nodes = node_properties
+
+    @classmethod
+    def from_distances(cls, nodes, distances):
+        return dict.fromkeys(nodes, distances)
+
+
+class SpatialGraph:
+    def __init__(self, edges: tuple, node_properties: Nodes):
+        self.node_properties = node_properties
+        self.edges = edges
+

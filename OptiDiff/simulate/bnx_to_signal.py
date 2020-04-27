@@ -26,6 +26,7 @@ class BnxToSignal(utils.BnxParser):
         self.molecule_lsh = None
         self.molecule_count = len(self.bnx_arrays)
         self.segment_densities = list()
+        self.filtered_molecules = list()
 
     def write_arrays_as_bnx(self, outname):
         """
@@ -79,6 +80,7 @@ class BnxToSignal(utils.BnxParser):
     def create_mol_segments(self, length=100):
         filtered_mols = list(filter(lambda x: np.sum(x["signal"]), self.bnx_arrays))
         self.mol_segment_count = 0
+
         cumulative = 0
         for molecule in filtered_mols:
             current_segments = [molecule["signal"][i:i+length] for i in molecule["labels"] if molecule["signal"][i:i+length].shape[0] == length]
@@ -90,6 +92,7 @@ class BnxToSignal(utils.BnxParser):
             self.molecule_segment_indices.append((cumulative, cumulative + len(self.molecule_segments[-1])))
             cumulative += len(self.molecule_segments[-1])
             self.mol_segment_count += len(self.molecule_segments[-1])
+            self.filtered_molecules.append(molecule)
         self.molecule_segments = np.vstack(self.molecule_segments)
 
     def mol_compress(self, length=100, nbits=16, custom_table=np.array([])):
