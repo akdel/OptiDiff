@@ -1,8 +1,10 @@
 from OptiScan import utils
+from typing import List, Tuple, Dict
 import numpy as np
 from scipy import ndimage
 # import matplotlib.pyplot as plt
 from LSH import lsh
+from dataclasses import dataclass
 
 
 class BnxToLabels(utils.BnxParser):
@@ -13,6 +15,44 @@ class BnxToLabels(utils.BnxParser):
     def generate_molecule_labels(self):
         for molecule_id in range(len(self.bnx_arrays)):
             yield list(self.bnx_arrays[molecule_id]["labels"])
+
+
+@dataclass
+class MoleculeSeg:
+    """
+    Contains molecule segment information used in SV detection.
+    """
+    index: int
+    molecule_length: int
+    segments: np.ndarray
+    label_densities: List[int]
+    zoom_factor: int = 500
+    segment_length: int = 100
+    compressed_segment_range: Tuple[int, int] = (-1, -1)
+
+    @classmethod
+    def from_bnx_line(cls, bnx_array_entry: dict, reverse=False, segment_length: int = 100, zoom_factor: int = 500):
+        index = int(bnx_array_entry["info"][1])
+        length = int(bnx_array_entry["info"][2])
+        labels = (np.array(bnx_array_entry["labels"]) / zoom_factor).astype(int)
+        sig = np.zeros(length//zoom_factor)
+        sig[labels] = 5000.
+        log_sig = np.log1p(ndimage.gaussian_filter1d(sig, sigma=1))
+        if reverse:
+            log_sig = log_sig[::-1]
+            labels = np.array([log_sig.shape[0]-x for x in labels])
+            index *= -1
+        segments, label_density = get_segments(segment_length, log_sig, labels)
+        return cls(index, length, np.array(segments), label_density,
+                   zoom_factor=zoom_factor, segment_length=segment_length)
+
+
+def get_segments(segment_length, signal, labels):
+    segments = [signal[i:i + segment_length] for i in labels
+                if signal[i:i + segment_length].shape[0] == segment_length]
+    label_density = [len([x for x in labels if i < x < i + segment_length]) for i in labels
+                     if signal[i:i + segment_length].shape[0] == segment_length]
+    return segments, label_density
 
 
 class BnxToSignal(utils.BnxParser):
