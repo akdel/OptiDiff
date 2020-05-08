@@ -17,6 +17,22 @@ class BnxToLabels(utils.BnxParser):
             yield list(self.bnx_arrays[molecule_id]["labels"])
 
 
+class CmapToLabels(utils.CmapParser):
+    def __init__(self, cmap_path):
+        utils.CmapParser.__init__(self, cmap_path)
+        self.read_and_load_cmap_file()
+        self.get_position_indexes()
+
+    def generate_cmap_labels(self):
+        for chr_id in self.position_index.keys():
+            yield np.unique((np.array(self.position_index[chr_id])).astype(int))
+
+
+
+
+
+
+
 @dataclass
 class MoleculeSeg:
     """
@@ -28,7 +44,7 @@ class MoleculeSeg:
     label_densities: List[int]
     zoom_factor: int = 500
     segment_length: int = 100
-    compressed_segment_range: Tuple[int, int] = (-1, -1)
+    compressed_segments = None
 
     @classmethod
     def from_bnx_line(cls, bnx_array_entry: dict, reverse=False, segment_length: int = 100, zoom_factor: int = 500):
@@ -158,17 +174,6 @@ class BnxToSignal(utils.BnxParser):
             self.molecule_lsh = lsh.VectorsInLSH(nbits, self.molecule_segments, custom_table=randoms)
 
 
-class CmapToLabels(utils.CmapParser):
-    def __init__(self, cmap_path):
-        utils.CmapParser.__init__(self, cmap_path)
-        self.read_and_load_cmap_file()
-        self.get_position_indexes()
-
-    def generate_cmap_labels(self):
-        for chr_id in self.position_index.keys():
-            yield np.unique((np.array(self.position_index[chr_id])).astype(int))
-
-
 class CmapToSignal(utils.CmapParser):
     def __init__(self, cmap_path):
         utils.CmapParser.__init__(self, cmap_path)
@@ -179,7 +184,18 @@ class CmapToSignal(utils.CmapParser):
         self.chromosome_indices = list()
         self.chr_segments = list()
         self.chromosome_segment_indices = list()
-        self.chromosome_segment_density = list()
+        self.chromosome_segment_density = dict()
+        self.prepared = False
+        self.segment_length = None
+        self.zoom_factor = None
+
+    def prepare(self, zoom_factor=500, segment_length=200, nbits=64):
+        self.simulate_all_chrs(zoom_factor=zoom_factor)
+        self.create_chr_segments(length=segment_length)
+        self.chr_compress(length=segment_length, nbits=nbits)
+        self.segment_length = segment_length
+        self.zoom_factor = zoom_factor
+        self.prepared = True
 
     def generate_segment_from_bits(self, bits_id):
         bits = self.chromosome_lsh.search_results[bits_id:bits_id+1].view("uint8")
@@ -207,7 +223,10 @@ class CmapToSignal(utils.CmapParser):
                 continue
             for j in range(len(labels)):
                 current_density = len([x for x in (labels[j:] - labels[j]) if x < length])
-                self.chromosome_segment_density.append(current_density)
+                if chr_id not in self.chromosome_segment_density:
+                    self.chromosome_segment_density[chr_id] = [current_density]
+                else:
+                    self.chromosome_segment_density[chr_id].append(current_density)
             self.chr_segments.append([molecule[i:i + length] for i in labels if
                                       molecule[i:i + length].shape[0] == length])
             self.chromosome_segment_indices.append((cumulative, cumulative + len(self.chr_segments[-1])))
@@ -231,6 +250,34 @@ class CmapToSignal(utils.CmapParser):
             self.chromosome_lsh = lsh.VectorsInLSH(nbits, self.chr_segments, custom_table=custom_table)
         else:
             self.chromosome_lsh = lsh.VectorsInLSH(nbits, self.chr_segments, custom_table=randoms)
+
+
+@dataclass
+class ChromosomeSeg:
+    index: int
+    chromosome_length: int
+    label_densities: List[int]
+    kb_indices: np.ndarray
+    zoom_factor: int
+    segment_length: int
+    compressed_segment_graph: Dict[bytes, List[int]]
+
+    @classmethod
+    def from_cmap_signals(cls, cmap_signals: CmapToSignal, chromosome_id: int):
+        if cmap_signals.prepared:
+            start, end = cmap_signals.chromosome_segment_indices[chromosome_id]
+            compressed_segments = cmap_signals.chromosome_lsh[start:end]
+            kb_segment_indices = cmap_signals.position_index[chromosome_id] / 2
+            segment_graph = dict()
+            for i, segment in enumerate(compressed_segments):
+                if segment not in segment_graph:
+                    segment_graph[segment] = [i]
+                else:
+                    segment_graph[segment].append(i)
+        else:
+            raise BrokenPipeError("Cmap signals not prepared")
+        return cls(chromosome_id, kb_segment_indices[-1]*1000, cmap_signals.chromosome_segment_density[chromosome_id],
+                   kb_segment_indices, cmap_signals.zoom_factor, cmap_signals.segment_length, segment_graph)
 
 
 def from_fasta(fasta_path, digestion_motif="GCTCTTC", enzyme_name="BSPQ1", channel="1"):
