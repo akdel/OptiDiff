@@ -156,9 +156,13 @@ class Seeder(bts.CmapToSignal, bts.BnxToSignal):
                 edges[i] = mol_edges
         return pos_res, neg_res, edges
 
-    def molecules_to_chr_v2(self, thr=1, reference_mols=False):
+    def molecules_to_chr_v2(self, thr=1, reference_mols=False, ids=None):
         edges = {}
-        for i in range(len(self.molecule_segment_indices)):
+        if ids:
+            _range = ids
+        else:
+            _range = range(len(self.molecule_segment_indices))
+        for i in _range:
             mol_edges = self.molecule_to_edges_v2(i, thr=thr, reference_mol=reference_mols)
             if len(mol_edges):
                 edges[i] = mol_edges
@@ -175,6 +179,20 @@ class MatchToRef:
         self.match_edges = self.seed.molecules_to_chr_v2(thr=thr, reference_mols=False)
         self.mean_match_edge_freq = np.mean(list(self._get_match_edge_freq().values()))
         self.mean_ref_edge_freq = np.mean(list(self._get_ref_edge_freq().values()))
+
+    def _get_edge_freq(self, edges):
+        all_edges = dict()
+        total_edges = 0
+        for edges in edges.values():
+            for edge in edges:
+                if edge not in all_edges:
+                    all_edges[edge] = 1
+                else:
+                    all_edges[edge] += 1
+                total_edges += 1
+        # for edge in all_edges:
+        #     all_edges[edge] /= total_edges
+        return all_edges
 
     def _get_match_edge_freq(self, normalize=True, min_coverage=4):
         all_edges = dict()

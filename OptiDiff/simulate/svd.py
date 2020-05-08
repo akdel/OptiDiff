@@ -203,12 +203,12 @@ if __name__ == "__main__":
     # exit()
     for _ in range(25):
         svd_fasta = SvdFromFastaArray(fasta.fasta_array, fasta.fasta_digestion_array, omsim_exec_path, omsim_enzyme_path,
-                                      omsim_param_template_path, cov=600)
+                                      omsim_param_template_path, cov=500)
         print(svd_fasta.fasta_array.shape)
-        svd_fasta.copy_paste(length=500000)
+        svd_fasta.copy_paste(length=150000)
         # svd_fasta.introduce_deletion_label_based(np.random.choice([-1, 0, 1, 2, 3]))
         # svd_fasta.copy_paste(length=200000)
         print(svd_fasta.fasta_array.shape)
         print(svd_fasta.tracked_changes)
         # svd_fasta.write(fname=f"simulated_svd2/temp_svd_del{svd_fasta.tracked_changes[0][0]}-{svd_fasta.tracked_changes[0][1]}-{svd_fasta.tracked_changes[0][-1]}.fasta")
-        svd_fasta.write(fname=f"data/SVs/temp_svd_dup{svd_fasta.tracked_changes[0][0]}-{svd_fasta.tracked_changes[0][1]}-{svd_fasta.tracked_changes[0][2]}-{svd_fasta.tracked_changes[0][-1]}.fasta")
+        svd_fasta.write(fname=f"data/SVs2/temp_svd_dup{svd_fasta.tracked_changes[0][0]}-{svd_fasta.tracked_changes[0][1]}-{svd_fasta.tracked_changes[0][2]}-{svd_fasta.tracked_changes[0][-1]}.fasta")

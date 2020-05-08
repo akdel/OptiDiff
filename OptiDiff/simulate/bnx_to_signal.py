@@ -62,10 +62,14 @@ class BnxToSignal(utils.BnxParser):
         rev_sig[np.array([rev_sig.shape[0]-x-1 for x in indices])] = 5000.
         log_sig = np.log1p(ndimage.gaussian_filter1d(sig, sigma=1))
         log_rev_sig = np.log1p(ndimage.gaussian_filter1d(rev_sig, sigma=1))
+        self.bnx_arrays[molecule_id]["real_id"] = molecule_id
+        self.bnx_arrays[molecule_id]["ori"] = "+"
         self.bnx_arrays[molecule_id]["signal"] = log_sig
         self.bnx_arrays[molecule_id]["labels"] = indices
         self.bnx_arrays[molecule_id]["info"][2] = total_length
         self.bnx_arrays.append({})
+        self.bnx_arrays[-1]["real_id"] = molecule_id
+        self.bnx_arrays[-1]["ori"] = "-"
         self.bnx_arrays[-1]["signal"] = log_rev_sig
         self.bnx_arrays[-1]["labels"] = np.array([rev_sig.shape[0]-x for x in indices])
 
@@ -87,6 +91,7 @@ class BnxToSignal(utils.BnxParser):
             current_density = [len([x for x in molecule["labels"] if i < x < i + length]) for i in molecule["labels"] if molecule["signal"][i:i+length].shape[0] == length]
             if not len(current_segments):
                 continue
+
             self.molecule_segments.append([molecule["signal"][i:i + length] for i in molecule["labels"] if molecule["signal"][i:i + length].shape[0] == length])
             self.segment_densities.append(current_density)
             self.molecule_segment_indices.append((cumulative, cumulative + len(self.molecule_segments[-1])))
