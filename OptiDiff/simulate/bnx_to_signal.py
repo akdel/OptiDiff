@@ -391,6 +391,7 @@ class MoleculesOnChromosomes:
 class UnspecificSV:
     region: Tuple[int, int, int, int]  # (chrid, kb_mid, kb_start, kb_end)
     score: float
+    original_match_threshold: float
     reference_molecules_left: List[MoleculeSegmentPath]
     reference_molecules_right: List[MoleculeSegmentPath]
     sv_candidate_molecules_left: List[MoleculeSegmentPath]
@@ -435,39 +436,23 @@ def find_unspecific_sv_sites(reference: MoleculesOnChromosomes,
     result: List[UnspecificSV] = list()
     for chr_id in reference.counts_per_segment.keys():
         assert (chr_id in reference.counts_per_segment) and (chr_id in sv_candidate.counts_per_segment)
-        ratios = list()
-        ref_ids, ref_counts = reference.counts_per_segment[chr_id]
-        sv_ids, sv_counts = sv_candidate.counts_per_segment[chr_id]
-        segments = dict()
-        for i, segment_id in enumerate(ref_ids):
-            segments[segment_id] = [ref_counts[i], 0]
-        for i, segment_id in enumerate(sv_ids):
-            try:
-                segments[segment_id][1] += sv_counts[i]
-            except KeyError:
-                continue
-        for ref_id in ref_ids:
-            if segments[ref_id][1] < 1:
-                ratios.append((reference.chromosomes[chr_id].kb_indices[ref_id], segments[ref_id][0]))
-            else:
-                ratios.append(
-                    (reference.chromosomes[chr_id].kb_indices[ref_id], segments[ref_id][0] / segments[ref_id][1]))
-        sig = stats.zscore([x[1] for x in sorted(ratios, key=lambda x: x[0])])
-        plt.scatter([x[0] for x in ratios], [x[1] for x in ratios])
+        sig = reference.signal_from_chromosome(chr_id)/sv_candidate.signal_from_chromosome(chr_id)
+        peak_indices = utils.get_peaks(sig, z_thr, np.median(sig))
+        plt.plot(sig)
+        plt.scatter((peak_indices), sig[np.array(peak_indices).astype(int)], c="red")
         plt.show()
-        peak_indices = utils.get_peaks(sig, z_thr, 1.)
         for start, end, score in list({find_boundaries(sig, x) for x in peak_indices}):
-            reference_molecules_left, reference_molecules_right, sv_molecules_left, sv_molecules_right = get_molecules_in_region(chr_id, ratios[start][0], ratios[end][0], reference, sv_candidate)
-            result.append(UnspecificSV((chr_id, (ratios[start][0] + ratios[start][0])/2, ratios[start][0], ratios[start][0]),
-                                       score, reference_molecules_left, reference_molecules_right,
+            reference_molecules_left, reference_molecules_right, sv_molecules_left, sv_molecules_right = get_molecules_in_region(chr_id, start, end, reference, sv_candidate)
+            result.append(UnspecificSV((chr_id, (start + end)/2, start, end),
+                                       score, reference.distance_thr, reference_molecules_left, reference_molecules_right,
                                        sv_molecules_left, sv_molecules_right))
     return result
 
 
 def get_molecules_in_region(chr_id, start, end, reference: MoleculesOnChromosomes, sv_candidate: MoleculesOnChromosomes):
 
-    start_kb = start - (reference.chromosomes[chr_id].segment_length)
-    end_kb = end + reference.chromosomes[chr_id].segment_length
+    start_kb = start - (reference.chromosomes[chr_id].segment_length/2)*2
+    end_kb = end + (reference.chromosomes[chr_id].segment_length/2)*2
     mid_kb = (start + end) / 2
 
     proximal_left_segment_ids = [i for (i, x) in enumerate(reference.chromosomes[chr_id].kb_indices) if
@@ -491,6 +476,7 @@ def get_molecules_in_region(chr_id, start, end, reference: MoleculesOnChromosome
     sv_molecules_right = [sv_candidate.molecules[k] for k in proximal_right_sv_molecule_ids]
     return reference_molecules_left, reference_molecules_right, sv_molecules_left, sv_molecules_right
 
+
 def find_boundaries(sig, peak, snr=1.5):
     snr_thr = max(1, np.median(sig)) * snr
     start = end = peak
@@ -509,14 +495,92 @@ def find_boundaries(sig, peak, snr=1.5):
 
 @dataclass
 class Translocation:
-    origin: Tuple[int, int, int]
+    origin: Tuple[int, int, int, int]
     inserted_region: Tuple[int, int, int]
+    score: float
 
+
+def check_translocation(unspecific_sv: UnspecificSV,
+                        chromosome:ChromosomeSeg,
+                        thr: float = 5) -> [Translocation, None]:
+    translocation_ratio_left = get_translocation_ratio_signal(unspecific_sv.reference_molecules_left,
+                                                              unspecific_sv.sv_candidate_molecules_left,
+                                                              chromosome, unspecific_sv.original_match_threshold)
+    translocation_ratio_right = get_translocation_ratio_signal(unspecific_sv.reference_molecules_right,
+                                                              unspecific_sv.sv_candidate_molecules_right,
+                                                              chromosome, unspecific_sv.original_match_threshold)
+    plt.plot(translocation_ratio_left)
+    plt.plot(translocation_ratio_right)
+    plt.show()
+    peak_indices_left = utils.get_peaks(translocation_ratio_left, thr, max(1, np.median(translocation_ratio_left)))
+    peak_indices_right = utils.get_peaks(translocation_ratio_right, thr, max(1, np.median(translocation_ratio_right)))
+    if len(peak_indices_left) and len(peak_indices_right):
+        top_left = list(sorted([x for x in peak_indices_left], key=lambda x: translocation_ratio_left[int(x)]))[-1]
+        top_right = list(sorted([x for x in peak_indices_right], key=lambda x: translocation_ratio_right[int(x)]))[-1]
+        score = (translocation_ratio_left[int(top_left)] + translocation_ratio_right[int(top_right)]) / 2
+        return Translocation(unspecific_sv.region, (chromosome.index, top_left, top_right), score)
+    else:
+        translocation_ratio_all = get_translocation_ratio_signal(unspecific_sv.reference_molecules_right + unspecific_sv.reference_molecules_left,
+                                                                   unspecific_sv.sv_candidate_molecules_right + unspecific_sv.sv_candidate_molecules_left,
+                                                                   chromosome, unspecific_sv.original_match_threshold)
+        peak_indices_all = utils.get_peaks(translocation_ratio_left, thr, max(1, np.median(translocation_ratio_left)))
+        if len(peak_indices_all):
+            top_all = list(sorted([x for x in peak_indices_all], key=lambda x: translocation_ratio_all[int(x)]))[-1]
+            score = translocation_ratio_left[int(top_all)]
+            return Translocation(unspecific_sv.region, (chromosome.index, top_all, top_all), score)
+        else:
+            return None
+
+
+def get_translocation_ratio_signal(reference_molecules: List[MoleculeSegmentPath],
+                                   sv_candidate_molecules: List[MoleculeSegmentPath],
+                                   chromosome: ChromosomeSeg, distance_thr: float):
+    chromosome_id = chromosome.index
+    reference_molecule_segments = [
+        list(itertools.chain.from_iterable([x.forward_paths[chromosome_id], x.reverse_paths[chromosome_id]])) for x in
+        reference_molecules]
+    sv_candidate_molecule_segments = [
+        list(itertools.chain.from_iterable([x.forward_paths[chromosome_id], x.reverse_paths[chromosome_id]])) for x in
+        sv_candidate_molecules]
+
+    sig_ref = segments_to_sig(reference_molecule_segments, chromosome.kb_indices, chromosome.segment_length, distance_thr)
+    sig_sv = segments_to_sig(sv_candidate_molecule_segments, chromosome.kb_indices, chromosome.segment_length, distance_thr)
+    return sig_sv/sig_ref
+
+
+def segments_to_sig(molecule_segments: List[List[int]], kb_indices: np.ndarray, segment_length: int, distance_thr: float):
+    sig = np.zeros(int(kb_indices[-1] + (segment_length / 2) + 1))
+    for mol_seg in molecule_segments:
+        current = np.zeros(sig.shape[0])
+        for seg in mol_seg:
+            start, end = int(kb_indices[seg]), \
+                         int(kb_indices[seg] + (segment_length / 2 / distance_thr))
+            current[start: end] = signal.windows.gaussian(end - start, (end - start) * 0.5)
+        sig += current
+    sig[np.where(sig < 1)[0]] = 1
+    return sig
 
 @dataclass
 class Duplication:
     translocation: Translocation
-    ttest_score: Tuple[float, float]
+    t_score: float
+    p_value: float
+
+
+def check_duplication(translocation: Translocation,
+                      reference: MoleculesOnChromosomes,
+                      sv_candidate: MoleculesOnChromosomes,
+                      p_value_thr: float = 0.001):
+    chromosome_id = translocation.inserted_region[0]
+    ratios = sv_candidate.signal_from_chromosome(chromosome_id)/reference.signal_from_chromosome(chromosome_id)
+    start, end = translocation.inserted_region[1:]
+    without = np.concatenate([ratios[:start], ratios[end:]])
+    duplication_candidate = ratios[start:end]
+    ttest_p = stats.ttest_ind(without, duplication_candidate, equal_var=False)
+    if ttest_p[1] <= p_value_thr:
+        return Duplication(translocation, ttest_p[0], ttest_p[1])
+    else:
+        return translocation
 
 
 @dataclass
