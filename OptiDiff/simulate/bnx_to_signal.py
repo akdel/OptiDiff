@@ -1,5 +1,5 @@
 from OptiScan import utils
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Generator, Any
 import numpy as np
 from scipy import ndimage
 import matplotlib.pyplot as plt
@@ -7,6 +7,7 @@ from LSH import lsh
 from dataclasses import dataclass
 import numba as nb
 from scipy import stats, signal
+import itertools
 
 
 @nb.njit
@@ -130,7 +131,7 @@ class CmapToSignal(utils.CmapParser):
         self.nbits = None
 
     def prepare(self, zoom_factor=500, segment_length=200, nbits=64):
-        self.nbits = 64
+        self.nbits = nbits
         self.simulate_all_chrs(zoom_factor=zoom_factor)
         self.create_chr_segments(length=segment_length)
         self.chr_compress(length=segment_length, nbits=nbits)
@@ -207,7 +208,8 @@ class ChromosomeSeg:
     @classmethod
     def from_cmap_signals(cls, cmap_signals: CmapToSignal, chromosome_id: int):
         if cmap_signals.prepared:
-            start, end = cmap_signals.chromosome_segment_indices[chromosome_id - 1]
+            start, end = cmap_signals.chromosome_segment_indices[
+                list(cmap_signals.position_index.keys()).index(chromosome_id)]
             compressed_segments = cmap_signals.chromosome_lsh.search_results[start:end]
             kb_segment_indices = cmap_signals.position_index[chromosome_id] / 2
             segment_graph = dict()
@@ -278,7 +280,7 @@ class Scores:
         visited = {(k, i): (0, [i]) for (k, i) in current}
         target_length = len(self.segment_matches)
         while len(current):
-            current.sort(key=lambda x: visited[x][0], reverse=True)
+            # current.sort(key=lambda x: visited[x][0], reverse=True)
             now = current.pop()
             if len(visited[now][1]) == target_length:
                 return visited[now][1]
@@ -294,6 +296,18 @@ class Scores:
         return []
 
 
+def get_matched_ratio(all_scores: List[Scores]):
+    total = len(all_scores) / 2
+    used = set()
+    for score in all_scores:
+        try:
+            if np.concatenate(list(score.segment_matches.values())).shape[0]:
+                used.add(abs(score.molecule_id))
+        except ValueError:
+            continue
+    return len(used) / total
+
+
 @dataclass
 class MoleculeSegmentPath:
     molecule_id: int
@@ -302,7 +316,7 @@ class MoleculeSegmentPath:
     reverse_paths: Dict[int, List[int]]
 
 
-def segment_paths_from_scores(scores: List[Scores]) -> List[MoleculeSegmentPath]:
+def segment_paths_from_scores(scores: Generator[Scores, Any, None]) -> List[MoleculeSegmentPath]:
     molecules: Dict[int, MoleculeSegmentPath] = dict()
     for score in scores:
         if abs(score.molecule_id) not in molecules:
@@ -327,14 +341,16 @@ class MoleculesOnChromosomes:
     chromosomes: Dict[int, ChromosomeSeg]
     counts_per_segment: Dict[int, Tuple[np.ndarray, np.ndarray]]
     molecules_per_segment: Dict[int, List[List[int]]]
+    distance_thr: float
 
     @classmethod
     def from_molecules_and_chromosomes(cls,
                                        molecules: List[MoleculeSeg],
                                        chromosomes: List[ChromosomeSeg],
                                        distance_thr: float = 1.8):
-        scores: List[Scores] = [Scores.from_molecule_and_chromosome(y, x, distance_thr=distance_thr) for y in molecules
-                                for x in chromosomes]
+        scores: Generator[Scores, Any, None] = (Scores.from_molecule_and_chromosome(y, x, distance_thr=distance_thr)
+                                                for y in molecules for x in chromosomes)
+        # print(get_matched_ratio(scores), "of molecules matched.")
         molecule_segment_paths: List[MoleculeSegmentPath] = segment_paths_from_scores(scores)
         chromosomes_dict: Dict[int, ChromosomeSeg] = {chromosome.index: chromosome for chromosome in chromosomes}
         molecules_per_segment: Dict[int, List[int]] = {x: list() for x in chromosomes_dict.keys()}
@@ -350,18 +366,72 @@ class MoleculesOnChromosomes:
         counts_per_segment: Dict[int, Tuple[np.ndarray, np.ndarray]] = {k: np.unique(v, return_counts=True) for (k, v)
                                                                         in molecules_per_segment.items()}
         return cls({x.molecule_id: x for x in molecule_segment_paths},
-                   chromosomes_dict, counts_per_segment, molecule_ids_per_segment)
+                   chromosomes_dict, counts_per_segment, molecule_ids_per_segment, distance_thr=distance_thr)
+
+    def signal_from_chromosome(self, chromosome_id: int):
+        chromosome = self.chromosomes[chromosome_id]
+        molecule_segments = [list(itertools.chain.from_iterable([x.forward_paths[chromosome_id], x.reverse_paths[chromosome_id]])) for x in self.molecules.values()]
+        sig = np.zeros(int(chromosome.kb_indices[-1] + (chromosome.segment_length/2) + 1))
+        for mol_seg in molecule_segments:
+            current = np.zeros(sig.shape[0])
+            for seg in mol_seg:
+                start, end = int(chromosome.kb_indices[seg]), \
+                             int(chromosome.kb_indices[seg]+(chromosome.segment_length/2/self.distance_thr))
+                current[start: end] = signal.windows.gaussian(end-start, (end-start)*0.5)
+            sig += current
+        sig[np.where(sig < 1)[0]] = 1
+        return sig
+
+
+
+
 
 
 @dataclass
 class UnspecificSV:
-    region: Tuple[int, int, int]  # (chrid, kb_start, kb_end)
+    region: Tuple[int, int, int, int]  # (chrid, kb_mid, kb_start, kb_end)
     score: float
-    reference_molecules: List[MoleculeSegmentPath]
-    sv_candidate_molecules: List[MoleculeSegmentPath]
+    reference_molecules_left: List[MoleculeSegmentPath]
+    reference_molecules_right: List[MoleculeSegmentPath]
+    sv_candidate_molecules_left: List[MoleculeSegmentPath]
+    sv_candidate_molecules_right: List[MoleculeSegmentPath]
+
+    def plot_molecules(self, chromosome: ChromosomeSeg, data="reference", side="left"):
+        assert chromosome.index == self.region[0]
+        chrom_id = self.region[0]
+        colors = ["green", "yellow", "orange", "pink", "brown", "black", "blue", "red"]
+        ci = 0
+        i = 0
+        distances = chromosome.kb_indices
+        if data == "reference":
+            if side == "left":
+                molecules = self.reference_molecules_left
+            elif side == "right":
+                molecules = self.reference_molecules_right
+            else:
+                return None
+        elif data == "sv_candidate":
+            if side == "left":
+                molecules = self.sv_candidate_molecules_left
+            elif side == "right":
+                molecules = self.sv_candidate_molecules_right
+            else:
+                return None
+        else:
+            return None
+        for molecule in molecules:
+            for coord in np.concatenate([molecule.reverse_paths[chrom_id], molecule.forward_paths[chrom_id]]):
+                plt.plot([distances[int(coord)], distances[int(coord)] + chromosome.segment_length],
+                         [i, i], color=colors[ci])
+                i += 1
+            i += 3
+            ci = (ci + 1) % len(colors)
+        plt.show()
 
 
-def find_unspecific_sv_sites(reference: MoleculesOnChromosomes, sv_candidate: MoleculesOnChromosomes) -> List[UnspecificSV]:
+def find_unspecific_sv_sites(reference: MoleculesOnChromosomes,
+                             sv_candidate: MoleculesOnChromosomes,
+                             z_thr: float = 5.) -> List[UnspecificSV]:
     result: List[UnspecificSV] = list()
     for chr_id in reference.counts_per_segment.keys():
         assert (chr_id in reference.counts_per_segment) and (chr_id in sv_candidate.counts_per_segment)
@@ -380,27 +450,51 @@ def find_unspecific_sv_sites(reference: MoleculesOnChromosomes, sv_candidate: Mo
             if segments[ref_id][1] < 1:
                 ratios.append((reference.chromosomes[chr_id].kb_indices[ref_id], segments[ref_id][0]))
             else:
-                ratios.append((reference.chromosomes[chr_id].kb_indices[ref_id], segments[ref_id][0]/segments[ref_id][1]))
+                ratios.append(
+                    (reference.chromosomes[chr_id].kb_indices[ref_id], segments[ref_id][0] / segments[ref_id][1]))
         sig = stats.zscore([x[1] for x in sorted(ratios, key=lambda x: x[0])])
-        snr_thr = max(1, np.median(sig)) * 3.5
-        peak_indices = signal.find_peaks(sig)[0]
-        peak_indices = peak_indices[sig[peak_indices] > snr_thr]
-        for start, end in list({find_boundaries(sig, x) for x in peak_indices}):
-            start_kb = reference.chromosomes[chr_id].kb_indices[start] - (reference.chromosomes[chr_id].segment_length*2)
-            end_kb = reference.chromosomes[chr_id].kb_indices[end] + reference.chromosomes[chr_id].segment_length
-            proximal_segment_ids = [i for (i, x) in enumerate(reference.chromosomes[chr_id].kb_indices) if start_kb < x <= end_kb]
-            proximal_chr_molecule_ids = np.unique(np.concatenate([reference.molecules_per_segment[chr_id][i] for i in proximal_segment_ids]))
-            proximal_sv_molecule_ids = np.unique(np.concatenate([sv_candidate.molecules_per_segment[chr_id][i] for i in proximal_segment_ids]))
-            reference_molecules = [reference.molecules[k] for k in proximal_chr_molecule_ids]
-            sv_molecules = [sv_candidate.molecules[k] for k in proximal_sv_molecule_ids]
-            result.append(UnspecificSV((chr_id, start, end), snr_thr, reference_molecules, sv_molecules))
+        plt.scatter([x[0] for x in ratios], [x[1] for x in ratios])
+        plt.show()
+        peak_indices = utils.get_peaks(sig, z_thr, 1.)
+        for start, end, score in list({find_boundaries(sig, x) for x in peak_indices}):
+            reference_molecules_left, reference_molecules_right, sv_molecules_left, sv_molecules_right = get_molecules_in_region(chr_id, ratios[start][0], ratios[end][0], reference, sv_candidate)
+            result.append(UnspecificSV((chr_id, (ratios[start][0] + ratios[start][0])/2, ratios[start][0], ratios[start][0]),
+                                       score, reference_molecules_left, reference_molecules_right,
+                                       sv_molecules_left, sv_molecules_right))
     return result
 
+
+def get_molecules_in_region(chr_id, start, end, reference: MoleculesOnChromosomes, sv_candidate: MoleculesOnChromosomes):
+
+    start_kb = start - (reference.chromosomes[chr_id].segment_length)
+    end_kb = end + reference.chromosomes[chr_id].segment_length
+    mid_kb = (start + end) / 2
+
+    proximal_left_segment_ids = [i for (i, x) in enumerate(reference.chromosomes[chr_id].kb_indices) if
+                                 start_kb < x <= mid_kb]
+    proximal_right_segment_ids = [i for (i, x) in enumerate(reference.chromosomes[chr_id].kb_indices) if
+                                  mid_kb < x <= end_kb]
+
+    proximal_left_chr_molecule_ids = np.unique(
+        np.concatenate([reference.molecules_per_segment[chr_id][i] for i in proximal_left_segment_ids]))
+    proximal_left_sv_molecule_ids = np.unique(
+        np.concatenate([sv_candidate.molecules_per_segment[chr_id][i] for i in proximal_left_segment_ids]))
+
+    proximal_rigth_chr_molecule_ids = np.unique(
+        np.concatenate([reference.molecules_per_segment[chr_id][i] for i in proximal_right_segment_ids]))
+    proximal_right_sv_molecule_ids = np.unique(
+        np.concatenate([sv_candidate.molecules_per_segment[chr_id][i] for i in proximal_right_segment_ids]))
+
+    reference_molecules_left = [reference.molecules[k] for k in proximal_left_chr_molecule_ids]
+    reference_molecules_right = [reference.molecules[k] for k in proximal_rigth_chr_molecule_ids]
+    sv_molecules_left = [sv_candidate.molecules[k] for k in proximal_left_sv_molecule_ids]
+    sv_molecules_right = [sv_candidate.molecules[k] for k in proximal_right_sv_molecule_ids]
+    return reference_molecules_left, reference_molecules_right, sv_molecules_left, sv_molecules_right
 
 def find_boundaries(sig, peak, snr=1.5):
     snr_thr = max(1, np.median(sig)) * snr
     start = end = peak
-    for end in range(peak, len(sig)-1):
+    for end in range(peak, len(sig) - 1):
         if sig[end] < snr_thr:
             continue
         else:
@@ -410,14 +504,13 @@ def find_boundaries(sig, peak, snr=1.5):
             continue
         else:
             break
-    return start, end
+    return start, end, sig[peak]
 
 
 @dataclass
 class Translocation:
     origin: Tuple[int, int, int]
     inserted_region: Tuple[int, int, int]
-    duplication_ratios: Dict[int, np.ndarray]
 
 
 @dataclass
@@ -433,13 +526,13 @@ class Inversion:
 
 def find_specific_sv(unspecific_sv: UnspecificSV, reference: MoleculesOnChromosomes, candidate: MoleculesOnChromosomes):
     # First check translocation
-        # then check duplication
-            # translocation if false
-            # duplication if true
-            # Check inversions
-                # if true then add inversion to translocation/duplication
+    # then check duplication
+    # translocation if false
+    # duplication if true
+    # Check inversions
+    # if true then add inversion to translocation/duplication
     # Check inversion
-        # if true then return inversion
+    # if true then return inversion
     # if none of the above then SV < seed size or deletion > 1kb
     pass
 
@@ -461,24 +554,42 @@ def fasta_to_cmap(fasta_in_path, cmap_out_path, digestion_motif="GCTCTTC",
 
 
 if __name__ == "__main__":
-    bnx = utils.BnxParser(
-        "/home/biridir/PycharmProjects/optidiff/data/SVs/temp_svd_dup1715773-2215773-1067172-dup.fasta.bnx")
-    bnx.read_bnx_file()
-    bnx_ref = utils.BnxParser("/home/biridir/PycharmProjects/optidiff/all_ref_5mb.fasta.bnx")
-    bnx_ref.read_bnx_file()
-    ms_ref = [MoleculeSeg.from_bnx_line(x, reverse=False, segment_length=200) for x in bnx_ref.bnx_arrays] + [
-        MoleculeSeg.from_bnx_line(x, reverse=True, segment_length=200) for x in bnx_ref.bnx_arrays]
-    ms = [MoleculeSeg.from_bnx_line(x, reverse=False, segment_length=200) for x in bnx.bnx_arrays] + [
-        MoleculeSeg.from_bnx_line(x, reverse=True, segment_length=200) for x in bnx.bnx_arrays]
-    cmap = CmapToSignal("/home/biridir/PycharmProjects/optidiff/temp_all_chr.cmap")
-    cmap.prepare(segment_length=200)
+    lim = 30000
+    cmap = CmapToSignal("/home/biridir/PycharmProjects/optidiff/tair10_chr2.cmap")
+    cmap.prepare(segment_length=250)
     chrom1 = ChromosomeSeg.from_cmap_signals(cmap, 1)
+
+    bnx = utils.BnxParser(
+        "/home/biridir/PycharmProjects/optidiff/data/arabidopsis_bnx/salk_059379_merged_molecules.bnx")
+    bnx.read_bnx_file()
+    bnx_ref = utils.BnxParser(
+        "/home/biridir/PycharmProjects/optidiff/all_ref_5mb3.fasta.bnx")
+    bnx_ref.read_bnx_file()
+    ms_ref = itertools.chain.from_iterable(((MoleculeSeg.from_bnx_line(x, reverse=False, segment_length=250,
+                                                                       zoom_factor=500) for x in
+                                             bnx_ref.bnx_arrays[:lim]), (
+                                                MoleculeSeg.from_bnx_line(x, reverse=True, segment_length=250,
+                                                                          zoom_factor=500) for x in
+                                            bnx_ref.bnx_arrays[:lim])))
+    ms = itertools.chain.from_iterable((
+                                       (MoleculeSeg.from_bnx_line(x, reverse=False, segment_length=250, zoom_factor=500)
+                                        for x in bnx.bnx_arrays[:lim]), (
+                                           MoleculeSeg.from_bnx_line(x, reverse=True, segment_length=250,
+                                                                     zoom_factor=500) for x in bnx.bnx_arrays[:lim])))
+
     # chrom2 = ChromosomeSeg.from_cmap_signals(cmap, 1)
     # chrom2.index = 2
     chroms = [chrom1]
-    res = MoleculesOnChromosomes.from_molecules_and_chromosomes(ms, chroms, distance_thr=1.8)
-    res_ref = MoleculesOnChromosomes.from_molecules_and_chromosomes(ms_ref, chroms, distance_thr=1.8)
-    print(find_unspecific_sv_sites(res_ref, res))
+    res = MoleculesOnChromosomes.from_molecules_and_chromosomes(ms, chroms, distance_thr=1.7)
+    res_ref = MoleculesOnChromosomes.from_molecules_and_chromosomes(ms_ref, chroms, distance_thr=1.7)
+    unspecific_sites = find_unspecific_sv_sites(res_ref, res)
+    for site in unspecific_sites:
+        print(site)
+        site.plot_molecules(chrom1, data="sv_candidate", side="left")
+        site.plot_molecules(chrom1, data="sv_candidate", side="right")
+        site.plot_molecules(chrom1, data="reference", side="left")
+        site.plot_molecules(chrom1, data="reference", side="right")
+    # print([(x.region[1], x.region[2]) for x in unspecific_sites])
     # paths = [Scores.from_molecule_and_chromosome(m, chrom, distance_thr=1.8).get_best_path() for m in ms if
     #          len(m.segments) > 1]
     # paths = list(filter(lambda x: len(x) >= 2, paths))

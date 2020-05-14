@@ -181,12 +181,12 @@ if __name__ == "__main__":
     # fasta.write_all_chr(fname="temp.fasta")  # concats chromosomes into a single fasta entry
     fasta = Fasta("temp.fasta")  # reloads fasta
     print(fasta.fasta_array.shape)
-    fasta.write_fasta_to_cmap(digestion_sequence="GCTCTTC", output_file_name="temp_all_chr.cmap",
+    fasta.write_fasta_to_cmap(digestion_sequence="GCTCTTC", output_file_name="yeast.cmap",
                               enzyme_name="BSPQ1", channel=1)  # writes fasta cmap and digests the sequence
     print(fasta.fasta_array.shape)
     svd_fasta = SvdFromFastaArray(fasta.fasta_array, fasta.fasta_digestion_array, omsim_exec_path, omsim_enzyme_path,
-                                  omsim_param_template_path, cov=1800)
-    svd_fasta.write_ref(fname="all_ref_5mb.fasta")
+                                  omsim_param_template_path, cov=1000)
+    svd_fasta.write_ref(fname="yeast.fasta")
     # exit()
     # print(fasta.fasta_array.shape)
     # svd_fasta = SvdFromFastaArray(fasta.fasta_array, fasta.fasta_digestion_array, omsim_exec_path, omsim_enzyme_path,
@@ -201,14 +201,14 @@ if __name__ == "__main__":
     # svd_fasta.write(
     #     fname=f"deletion_svd_low/temp_svd_del{svd_fasta.tracked_changes[0][0]}-{svd_fasta.tracked_changes[0][1]}-retry-del.fasta")
     # exit()
-    for _ in range(25):
-        svd_fasta = SvdFromFastaArray(fasta.fasta_array, fasta.fasta_digestion_array, omsim_exec_path, omsim_enzyme_path,
-                                      omsim_param_template_path, cov=500)
-        print(svd_fasta.fasta_array.shape)
-        svd_fasta.copy_paste(length=150000)
-        # svd_fasta.introduce_deletion_label_based(np.random.choice([-1, 0, 1, 2, 3]))
-        # svd_fasta.copy_paste(length=200000)
-        print(svd_fasta.fasta_array.shape)
-        print(svd_fasta.tracked_changes)
-        # svd_fasta.write(fname=f"simulated_svd2/temp_svd_del{svd_fasta.tracked_changes[0][0]}-{svd_fasta.tracked_changes[0][1]}-{svd_fasta.tracked_changes[0][-1]}.fasta")
-        svd_fasta.write(fname=f"data/SVs2/temp_svd_dup{svd_fasta.tracked_changes[0][0]}-{svd_fasta.tracked_changes[0][1]}-{svd_fasta.tracked_changes[0][2]}-{svd_fasta.tracked_changes[0][-1]}.fasta")
+    # for _ in range(25):
+    #     svd_fasta = SvdFromFastaArray(fasta.fasta_array, fasta.fasta_digestion_array, omsim_exec_path, omsim_enzyme_path,
+    #                                   omsim_param_template_path, cov=500)
+    #     print(svd_fasta.fasta_array.shape)
+    #     svd_fasta.copy_paste(length=150000)
+    #     # svd_fasta.introduce_deletion_label_based(np.random.choice([-1, 0, 1, 2, 3]))
+    #     # svd_fasta.copy_paste(length=200000)
+    #     print(svd_fasta.fasta_array.shape)
+    #     print(svd_fasta.tracked_changes)
+    #     # svd_fasta.write(fname=f"simulated_svd2/temp_svd_del{svd_fasta.tracked_changes[0][0]}-{svd_fasta.tracked_changes[0][1]}-{svd_fasta.tracked_changes[0][-1]}.fasta")
+    #     svd_fasta.write(fname=f"data/SVs2/temp_svd_dup{svd_fasta.tracked_changes[0][0]}-{svd_fasta.tracked_changes[0][1]}-{svd_fasta.tracked_changes[0][2]}-{svd_fasta.tracked_changes[0][-1]}.fasta")
