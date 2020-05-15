@@ -617,6 +617,8 @@ def check_duplication(translocation: Translocation,
     start, end = translocation.inserted_region[1:]
     without = np.concatenate([ratios[:start], ratios[end:]])
     duplication_candidate = ratios[start:end]
+    if np.mean(without) >= duplication_candidate:
+        return translocation
     ttest_p = stats.ttest_ind(without, duplication_candidate, equal_var=False)
     if ttest_p[1] <= p_value_thr:
         return Duplication(translocation, ttest_p[0], ttest_p[1])
