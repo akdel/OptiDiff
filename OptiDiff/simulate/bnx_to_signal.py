@@ -350,7 +350,6 @@ class MoleculesOnChromosomes:
                                        distance_thr: float = 1.8):
         scores: Generator[Scores, Any, None] = (Scores.from_molecule_and_chromosome(y, x, distance_thr=distance_thr)
                                                 for y in molecules for x in chromosomes)
-        # print(get_matched_ratio(scores), "of molecules matched.")
         molecule_segment_paths: List[MoleculeSegmentPath] = segment_paths_from_scores(scores)
         chromosomes_dict: Dict[int, ChromosomeSeg] = {chromosome.index: chromosome for chromosome in chromosomes}
         molecules_per_segment: Dict[int, List[int]] = {x: list() for x in chromosomes_dict.keys()}
@@ -370,7 +369,8 @@ class MoleculesOnChromosomes:
 
     def signal_from_chromosome(self, chromosome_id: int):
         chromosome = self.chromosomes[chromosome_id]
-        molecule_segments = [list(itertools.chain.from_iterable([x.forward_paths[chromosome_id], x.reverse_paths[chromosome_id]])) for x in self.molecules.values()]
+        molecule_segments = [list(itertools.chain.from_iterable([x.forward_paths[chromosome_id],
+                                                                 x.reverse_paths[chromosome_id]])) for x in self.molecules.values()]
         sig = np.zeros(int(chromosome.kb_indices[-1] + (chromosome.segment_length/2) + 1))
         for mol_seg in molecule_segments:
             current = np.zeros(sig.shape[0])
@@ -382,9 +382,20 @@ class MoleculesOnChromosomes:
         sig[np.where(sig < 1)[0]] = 1
         return sig
 
-
-
-
+    def inverted_ratio_from_chromosome(self, chromosome_id: int):
+        chromosome = self.chromosomes[chromosome_id]
+        inverted = np.zeros(int(chromosome.kb_indices[-1] + (chromosome.segment_length/2) + 1)) + 0.001
+        for molecule_id, molecule in self.molecules.items():
+            current = np.zeros(inverted.shape[0])
+            if len(molecule.reverse_paths[chromosome_id]) and len(molecule.forward_paths[chromosome_id]):
+                for seg in molecule.forward_paths[chromosome_id] + molecule.reverse_paths[chromosome_id]:
+                    start, end = int(chromosome.kb_indices[seg]), \
+                                 int(chromosome.kb_indices[seg] + (chromosome.segment_length / 2 / self.distance_thr))
+                    current[start: end] = signal.windows.gaussian(end - start, (end - start) * 0.5)
+                inverted += current
+            else:
+                continue
+        return inverted
 
 
 @dataclass
@@ -396,6 +407,22 @@ class UnspecificSV:
     reference_molecules_right: List[MoleculeSegmentPath]
     sv_candidate_molecules_left: List[MoleculeSegmentPath]
     sv_candidate_molecules_right: List[MoleculeSegmentPath]
+    inversion_ttest: Tuple[float, float]
+
+    def inverted_ratio_from_chromosome(self, chromosome_id: int):
+        chromosome = self.chromosomes[chromosome_id]
+        inverted = np.zeros(int(chromosome.kb_indices[-1] + (chromosome.segment_length/2) + 1)) + 0.001
+        for molecule_id, molecule in self.molecules.items():
+            current = np.zeros(inverted.shape[0])
+            if len(molecule.reverse_paths[chromosome_id]) and len(molecule.forward_paths[chromosome_id]):
+                for seg in molecule.forward_paths[chromosome_id] + molecule.reverse_paths[chromosome_id]:
+                    start, end = int(chromosome.kb_indices[seg]), \
+                                 int(chromosome.kb_indices[seg] + (chromosome.segment_length / 2 / self.distance_thr))
+                    current[start: end] = signal.windows.gaussian(end - start, (end - start) * 0.5)
+                inverted += current
+            else:
+                continue
+        return inverted
 
     def plot_molecules(self, chromosome: ChromosomeSeg, data="reference", side="left"):
         assert chromosome.index == self.region[0]
@@ -442,10 +469,13 @@ def find_unspecific_sv_sites(reference: MoleculesOnChromosomes,
         plt.scatter((peak_indices), sig[np.array(peak_indices).astype(int)], c="red")
         plt.show()
         for start, end, score in list({find_boundaries(sig, x) for x in peak_indices}):
-            reference_molecules_left, reference_molecules_right, sv_molecules_left, sv_molecules_right = get_molecules_in_region(chr_id, start, end, reference, sv_candidate)
+            print(start, end, score)
+            reference_molecules_left, reference_molecules_right, \
+            sv_molecules_left, sv_molecules_right, \
+            inversions = get_molecules_in_region(chr_id, start, end, reference, sv_candidate)
             result.append(UnspecificSV((chr_id, (start + end)/2, start, end),
                                        score, reference.distance_thr, reference_molecules_left, reference_molecules_right,
-                                       sv_molecules_left, sv_molecules_right))
+                                       sv_molecules_left, sv_molecules_right, inversions))
     return result
 
 
@@ -454,6 +484,7 @@ def get_molecules_in_region(chr_id, start, end, reference: MoleculesOnChromosome
     start_kb = start - (reference.chromosomes[chr_id].segment_length/2)*2
     end_kb = end + (reference.chromosomes[chr_id].segment_length/2)*2
     mid_kb = (start + end) / 2
+    inversion_number = 0
 
     proximal_left_segment_ids = [i for (i, x) in enumerate(reference.chromosomes[chr_id].kb_indices) if
                                  start_kb < x <= mid_kb]
@@ -474,23 +505,54 @@ def get_molecules_in_region(chr_id, start, end, reference: MoleculesOnChromosome
     reference_molecules_right = [reference.molecules[k] for k in proximal_rigth_chr_molecule_ids]
     sv_molecules_left = [sv_candidate.molecules[k] for k in proximal_left_sv_molecule_ids]
     sv_molecules_right = [sv_candidate.molecules[k] for k in proximal_right_sv_molecule_ids]
-    return reference_molecules_left, reference_molecules_right, sv_molecules_left, sv_molecules_right
+
+    inverted_sv_ratios = list()
+    inverted_ref_ratios = list()
+    for molecule in sv_molecules_left + sv_molecules_right:
+        forwards = 0.
+        backwards = 0.
+        for chr_id in reference.chromosomes.keys():
+            forwards += len(molecule.forward_paths[chr_id])
+            backwards += len(molecule.reverse_paths[chr_id])
+        if forwards == 0 and backwards == 0:
+            continue
+        else:
+            inverted_sv_ratios.append(min(forwards, backwards)/max(forwards, backwards))
+    for molecule in reference_molecules_left + reference_molecules_right:
+        forwards = 0.
+        backwards = 0.
+        for chr_id in reference.chromosomes.keys():
+            forwards += len(molecule.forward_paths[chr_id])
+            backwards += len(molecule.reverse_paths[chr_id])
+        if forwards == 0 and backwards == 0:
+            continue
+        else:
+            inverted_ref_ratios.append(min(forwards, backwards) / max(forwards, backwards))
+    print(np.mean(inverted_ref_ratios), np.mean(inverted_sv_ratios))
+    if np.mean(inverted_sv_ratios) <= np.mean(inverted_ref_ratios):
+        return reference_molecules_left, reference_molecules_right, \
+               sv_molecules_left, sv_molecules_right, (1, 1)
+    else:
+        tscore, pvalue = stats.ttest_ind(inverted_sv_ratios, inverted_ref_ratios, equal_var=False)
+        print(pvalue)
+        return reference_molecules_left, reference_molecules_right, \
+               sv_molecules_left, sv_molecules_right, (tscore, pvalue)
 
 
 def find_boundaries(sig, peak, snr=1.5):
     snr_thr = max(1, np.median(sig)) * snr
     start = end = peak
-    for end in range(peak, len(sig) - 1):
-        if sig[end] < snr_thr:
+    for end in range(peak, len(sig) - 5):
+        if np.median(sig[end:end+3]) > snr_thr:
             continue
         else:
             break
-    for start in list(range(0, peak))[::-1]:
-        if sig[start] < snr_thr:
+    for start in list(range(3, peak))[::-1]:
+        if np.median(sig[start-3:start]) > snr_thr:
             continue
         else:
             break
-    return start, end, sig[peak]
+    return int(start), int(end), int(sig[(start+end)//2])
 
 
 @dataclass
@@ -502,7 +564,7 @@ class Translocation:
 
 def check_translocation(unspecific_sv: UnspecificSV,
                         chromosome:ChromosomeSeg,
-                        thr: float = 5) -> [Translocation, None]:
+                        thr: float = 5) -> [Translocation, UnspecificSV]:
     translocation_ratio_left = get_translocation_ratio_signal(unspecific_sv.reference_molecules_left,
                                                               unspecific_sv.sv_candidate_molecules_left,
                                                               chromosome, unspecific_sv.original_match_threshold)
@@ -518,18 +580,25 @@ def check_translocation(unspecific_sv: UnspecificSV,
         top_left = list(sorted([x for x in peak_indices_left], key=lambda x: translocation_ratio_left[int(x)]))[-1]
         top_right = list(sorted([x for x in peak_indices_right], key=lambda x: translocation_ratio_right[int(x)]))[-1]
         score = (translocation_ratio_left[int(top_left)] + translocation_ratio_right[int(top_right)]) / 2
-        return Translocation(unspecific_sv.region, (chromosome.index, top_left, top_right), score)
+        if abs(top_left-top_right) <= chromosome.segment_length//2:
+            mid = (top_left + top_right)//2
+            top_left = mid - chromosome.segment_length//2
+            top_right = mid + chromosome.segment_length//2
+        return Translocation(unspecific_sv.region, (chromosome.index, min(top_left, top_right),
+                                                    max(top_left, top_right)), score)
     else:
         translocation_ratio_all = get_translocation_ratio_signal(unspecific_sv.reference_molecules_right + unspecific_sv.reference_molecules_left,
                                                                    unspecific_sv.sv_candidate_molecules_right + unspecific_sv.sv_candidate_molecules_left,
                                                                    chromosome, unspecific_sv.original_match_threshold)
-        peak_indices_all = utils.get_peaks(translocation_ratio_left, thr, max(1, np.median(translocation_ratio_left)))
+        peak_indices_all = utils.get_peaks(translocation_ratio_all, thr, max(1, np.median(translocation_ratio_all)))
         if len(peak_indices_all):
             top_all = list(sorted([x for x in peak_indices_all], key=lambda x: translocation_ratio_all[int(x)]))[-1]
             score = translocation_ratio_left[int(top_all)]
-            return Translocation(unspecific_sv.region, (chromosome.index, top_all, top_all), score)
+            return Translocation(unspecific_sv.region, (chromosome.index,
+                                                        max(0, top_all - chromosome.segment_length//2),
+                                                        max(0, top_all + chromosome.segment_length//2)), score)
         else:
-            return None
+            return unspecific_sv
 
 
 def get_translocation_ratio_signal(reference_molecules: List[MoleculeSegmentPath],
@@ -560,6 +629,7 @@ def segments_to_sig(molecule_segments: List[List[int]], kb_indices: np.ndarray, 
     sig[np.where(sig < 1)[0]] = 1
     return sig
 
+
 @dataclass
 class Duplication:
     translocation: Translocation
@@ -585,20 +655,56 @@ def check_duplication(translocation: Translocation,
 
 @dataclass
 class Inversion:
-    ratios: Dict[int, np.ndarray]
+    based_on: [Translocation, Duplication, UnspecificSV]
+
+    @property
+    def region(self):
+        if type(self.based_on) == Translocation:
+            return self.based_on.origin
+        elif type(self.based_on) == Duplication:
+            return self.based_on.translocation.origin
+        else:
+            return self.based_on.region
 
 
-def find_specific_sv(unspecific_sv: UnspecificSV, reference: MoleculesOnChromosomes, candidate: MoleculesOnChromosomes):
-    # First check translocation
-    # then check duplication
-    # translocation if false
-    # duplication if true
-    # Check inversions
-    # if true then add inversion to translocation/duplication
-    # Check inversion
-    # if true then return inversion
-    # if none of the above then SV < seed size or deletion > 1kb
-    pass
+def check_inversion_from_unspecific_sv(unspecific_sv: UnspecificSV, thr: float = 0.001,
+                                       additional: [None, Translocation, Duplication] = None):
+    if unspecific_sv.inversion_ttest[1] <= thr:
+        if additional is not None:
+            return Inversion(additional)
+        else:
+            return Inversion(unspecific_sv)
+    else:
+        if additional is not None:
+            return additional
+        else:
+            return unspecific_sv
+
+
+@dataclass
+class DeletionOrInsertion:
+    region: Tuple[int, int, int, int]
+    score: float
+
+
+def find_specific_sv(unspecific_sv: UnspecificSV,
+                     reference: MoleculesOnChromosomes,
+                     candidate: MoleculesOnChromosomes) -> [Translocation, Duplication, Inversion, DeletionOrInsertion]:
+    chromosomes = reference.chromosomes
+    svs = list()
+    for chr_id in chromosomes:
+        current_sv = check_translocation(unspecific_sv, chromosomes[chr_id])
+        if type(current_sv) == Translocation:
+            current_sv = check_duplication(current_sv, reference, candidate)
+        if type(current_sv) != UnspecificSV:
+            current_sv = check_inversion_from_unspecific_sv(unspecific_sv, additional=current_sv)
+        else:
+            current_sv = check_inversion_from_unspecific_sv(unspecific_sv, additional=None)
+        if type(current_sv) != UnspecificSV:
+            svs.append(current_sv)
+    if not len(svs):
+        svs.append(DeletionOrInsertion(unspecific_sv.region, unspecific_sv.score))
+    return svs
 
 
 def from_fasta(fasta_path, digestion_motif="GCTCTTC", enzyme_name="BSPQ1", channel="1"):

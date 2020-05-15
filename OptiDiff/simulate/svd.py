@@ -76,6 +76,7 @@ class SvdFromFastaArray:
         digestion_array = np.sum(digestion_array, axis=0)
         self.digestion_indices = np.where(digestion_array > 0)[0]
         self.fasta_array = fasta_array[0]
+        self.fasta_array_rev = fasta_array[1]
         self.tracked_changes = list()
 
     def introduce_deletion(self, start_dist=50000, var=10000):
@@ -104,12 +105,53 @@ class SvdFromFastaArray:
         self.fasta_array = np.concatenate((self.fasta_array[:_from], self.fasta_array[_to:]))
         self.tracked_changes.append((_from, _to, "del"))
 
-    def copy_paste(self, length=10000):
+    def inplace_inversion(self, length):
         start = np.random.randint(0, self.fasta_array.shape[0] - length)
         end = start + length
-        _to = np.random.randint(0, self.fasta_array.shape[0] - length)
-        self.fasta_array = np.concatenate((self.fasta_array[:_to], self.fasta_array[start:end], self.fasta_array[_to:]))
-        self.tracked_changes.append((start, end, _to, "dup"))
+        self.fasta_array = np.concatenate(
+            (self.fasta_array[:start], self.fasta_array_rev[::-1][start:end][::-1], self.fasta_array[end:]))
+        self.tracked_changes.append((start, end, "inv"))
+
+    def copy_paste(self, length=10000, inverted=False):
+        start = np.random.randint(0, self.fasta_array.shape[0] - length)
+        end = start + length
+        _to = max(0, start - 100000)
+        while max(0, start - 100000) <= _to <= (end + 100000):
+            _to = np.random.randint(0, self.fasta_array.shape[0] - length)
+        if not inverted:
+            self.fasta_array = np.concatenate((self.fasta_array[:_to], self.fasta_array[start:end], self.fasta_array[_to:]))
+            self.tracked_changes.append((start, end, _to, "dup"))
+        else:
+            self.fasta_array = np.concatenate(
+                (self.fasta_array[:_to], self.fasta_array_rev[::-1][start:end][::-1], self.fasta_array[_to:]))
+            self.tracked_changes.append((start, end, _to, "dup_inv"))
+
+    def translocation(self, length=100000, inverted=False):
+        start = np.random.randint(0, self.fasta_array.shape[0] - length)
+        end = start + length
+        _to = max(0, start - 100000)
+        while max(0, start - 100000) <= _to <= (end + 100000):
+            _to = np.random.randint(0, self.fasta_array.shape[0] - length)
+        if _to >= end:
+            if not inverted:
+                self.fasta_array = np.concatenate(
+                    ( self.fasta_array[:start],self.fasta_array[end:_to], self.fasta_array[start:end], self.fasta_array[_to:]))
+            else:
+                self.fasta_array = np.concatenate(
+                    ( self.fasta_array[:start],self.fasta_array[end:_to], self.fasta_array_rev[::-1][start:end][::-1], self.fasta_array[_to:]))
+        else:
+            if not inverted:
+                self.fasta_array = np.concatenate(
+                    (self.fasta_array[:_to], self.fasta_array[start:end], self.fasta_array[_to:start], self.fasta_array[end:]))
+            else:
+                self.fasta_array = np.concatenate(
+                    (self.fasta_array[:_to], self.fasta_array_rev[::-1][start:end][::-1], self.fasta_array[_to:start], self.fasta_array[end:]))
+        if inverted:
+            title = "trans_inv"
+        else:
+            title = "trans"
+        self.tracked_changes.append((start, end, _to, title))
+
 
     def write_ref(self, fname="temp_ref.fasta"):
         header = "> ref\n"
@@ -161,7 +203,7 @@ if __name__ == "__main__":
 
     fasta = Fasta("data/genomes/yeast.fasta")
     print(fasta.fasta_array.shape)
-    fasta.write_all_chr(fname="temp.fasta", lim=5000000) # concats chromosomes into a single fasta entry
+    fasta.write_all_chr(fname="temp.fasta", lim=10000000) # concats chromosomes into a single fasta entry
     fasta = Fasta("temp.fasta") # reloads fasta
     print(fasta.fasta_array.shape)
     fasta.write_fasta_to_cmap(digestion_sequence="GCTCTTC", output_file_name="temp_all_chr.cmap",
@@ -185,8 +227,8 @@ if __name__ == "__main__":
                               enzyme_name="BSPQ1", channel=1)  # writes fasta cmap and digests the sequence
     print(fasta.fasta_array.shape)
     svd_fasta = SvdFromFastaArray(fasta.fasta_array, fasta.fasta_digestion_array, omsim_exec_path, omsim_enzyme_path,
-                                  omsim_param_template_path, cov=1000)
-    svd_fasta.write_ref(fname="yeast.fasta")
+                                  omsim_param_template_path, cov=2000)
+    svd_fasta.write_ref(fname="yeast10mb.fasta")
     # exit()
     # print(fasta.fasta_array.shape)
     # svd_fasta = SvdFromFastaArray(fasta.fasta_array, fasta.fasta_digestion_array, omsim_exec_path, omsim_enzyme_path,
@@ -201,14 +243,18 @@ if __name__ == "__main__":
     # svd_fasta.write(
     #     fname=f"deletion_svd_low/temp_svd_del{svd_fasta.tracked_changes[0][0]}-{svd_fasta.tracked_changes[0][1]}-retry-del.fasta")
     # exit()
-    # for _ in range(25):
-    #     svd_fasta = SvdFromFastaArray(fasta.fasta_array, fasta.fasta_digestion_array, omsim_exec_path, omsim_enzyme_path,
-    #                                   omsim_param_template_path, cov=500)
-    #     print(svd_fasta.fasta_array.shape)
-    #     svd_fasta.copy_paste(length=150000)
-    #     # svd_fasta.introduce_deletion_label_based(np.random.choice([-1, 0, 1, 2, 3]))
-    #     # svd_fasta.copy_paste(length=200000)
-    #     print(svd_fasta.fasta_array.shape)
-    #     print(svd_fasta.tracked_changes)
-    #     # svd_fasta.write(fname=f"simulated_svd2/temp_svd_del{svd_fasta.tracked_changes[0][0]}-{svd_fasta.tracked_changes[0][1]}-{svd_fasta.tracked_changes[0][-1]}.fasta")
-    #     svd_fasta.write(fname=f"data/SVs2/temp_svd_dup{svd_fasta.tracked_changes[0][0]}-{svd_fasta.tracked_changes[0][1]}-{svd_fasta.tracked_changes[0][2]}-{svd_fasta.tracked_changes[0][-1]}.fasta")
+    import itertools
+    for _ in range(5):
+        svd_fasta = SvdFromFastaArray(fasta.fasta_array, fasta.fasta_digestion_array, omsim_exec_path, omsim_enzyme_path,
+                                      omsim_param_template_path, cov=1000)
+        print(svd_fasta.fasta_array.shape)
+        # svd_fasta.copy_paste(length=200000, inverted=True)
+        svd_fasta.inplace_inversion(200000)
+        # svd_fasta.introduce_deletion_label_based(np.random.choice([-1, 0, 1, 2, 3]))
+        # svd_fasta.copy_paste(length=200000)
+        print(svd_fasta.fasta_array.shape)
+        print(svd_fasta.tracked_changes)
+        # svd_fasta.write(fname=f"simulated_svd2/temp_svd_del{svd_fasta.tracked_changes[0][0]}-{svd_fasta.tracked_changes[0][1]}-{svd_fasta.tracked_changes[0][-1]}.fasta")
+        # svd_fasta.write(fname=f"data/SVs3_dup_inv/temp_svd_dup_inv{svd_fasta.tracked_changes[0][0]}-{svd_fasta.tracked_changes[0][1]}-{svd_fasta.tracked_changes[0][2]}-{svd_fasta.tracked_changes[0][-1]}.fasta")
+        svd_fasta.write(
+            fname=f"data/SVs3_dup_inv/{'-'.join([str(y) for y in itertools.chain.from_iterable(svd_fasta.tracked_changes)])}.fasta")
