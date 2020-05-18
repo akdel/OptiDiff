@@ -250,7 +250,7 @@ class Scores:
         except KeyError and IndexError:
             return -1, -1
 
-    def get_best_path(self):
+    def get_best_path(self, optimum_path: bool = False):
         if len(self.segment_matches) <= 1:
             return []
         first_key: int = list(self.segment_matches.keys())[0]
@@ -258,7 +258,8 @@ class Scores:
         visited = {(k, i): (0, [i]) for (k, i) in current}
         target_length = len(self.segment_matches)
         while len(current):
-            # current.sort(key=lambda x: visited[x][0], reverse=True)
+            if optimum_path:
+                current.sort(key=lambda x: visited[x][0], reverse=True)
             now = current.pop()
             if len(visited[now][1]) == target_length:
                 return visited[now][1]
@@ -294,22 +295,22 @@ class MoleculeSegmentPath:
     reverse_paths: Dict[int, List[int]]
 
 
-def segment_paths_from_scores(scores: Generator[Scores, Any, None]) -> List[MoleculeSegmentPath]:
+def segment_paths_from_scores(scores: Generator[Scores, Any, None], optimum_path: bool = False) -> List[MoleculeSegmentPath]:
     molecules: Dict[int, MoleculeSegmentPath] = dict()
     for score in scores:
         if abs(score.molecule_id) not in molecules:
             if score.molecule_id > 0:
                 molecules[abs(score.molecule_id)] = MoleculeSegmentPath(abs(score.molecule_id),
-                                                                        {score.chromosome_id: score.get_best_path()},
+                                                                        {score.chromosome_id: score.get_best_path(optimum_path)},
                                                                         {})
             else:
                 molecules[abs(score.molecule_id)] = MoleculeSegmentPath(abs(score.molecule_id), {},
-                                                                        {score.chromosome_id: score.get_best_path()})
+                                                                        {score.chromosome_id: score.get_best_path(optimum_path)})
         else:
             if score.molecule_id > 0:
-                molecules[abs(score.molecule_id)].forward_paths[score.chromosome_id] = score.get_best_path()
+                molecules[abs(score.molecule_id)].forward_paths[score.chromosome_id] = score.get_best_path(optimum_path)
             else:
-                molecules[abs(score.molecule_id)].reverse_paths[score.chromosome_id] = score.get_best_path()
+                molecules[abs(score.molecule_id)].reverse_paths[score.chromosome_id] = score.get_best_path(optimum_path)
     return list(molecules.values())
 
 
@@ -325,10 +326,10 @@ class MoleculesOnChromosomes:
     def from_molecules_and_chromosomes(cls,
                                        molecules: List[MoleculeSeg],
                                        chromosomes: List[ChromosomeSeg],
-                                       distance_thr: float = 1.8):
+                                       distance_thr: float = 1.8, optimum_path: bool = False):
         scores: Generator[Scores, Any, None] = (Scores.from_molecule_and_chromosome(y, x, distance_thr=distance_thr)
                                                 for y in molecules for x in chromosomes)
-        molecule_segment_paths: List[MoleculeSegmentPath] = segment_paths_from_scores(scores)
+        molecule_segment_paths: List[MoleculeSegmentPath] = segment_paths_from_scores(scores, optimum_path=optimum_path)
         chromosomes_dict: Dict[int, ChromosomeSeg] = {chromosome.index: chromosome for chromosome in chromosomes}
         molecules_per_segment: Dict[int, List[int]] = {x: list() for x in chromosomes_dict.keys()}
         molecule_ids_per_segment: Dict[int, List[List[int]]] = {
