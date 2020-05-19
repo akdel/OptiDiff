@@ -216,13 +216,14 @@ class Scores:
     molecule_id: int
     chromosome_id: int
     segment_matches: Dict[int, np.ndarray]
+    total_segments: int
 
     @classmethod
     def from_molecule_and_chromosome(cls, molecule: MoleculeSeg, chromosome: ChromosomeSeg, distance_thr: float = 1.8):
         assert molecule.nbits == chromosome.nbits
         assert molecule.segment_length == chromosome.segment_length
         if molecule.segments.shape[0] <= 1:
-            return Scores(molecule.index, chromosome.index, {})
+            return Scores(molecule.index, chromosome.index, {}, 0)
         if molecule.compressed_segments is None:
             molecule.compress()
         mol_bits: np.ndarray = molecule.compressed_segments.view("uint8").reshape(
@@ -239,7 +240,7 @@ class Scores:
                     [chromosome.compressed_segment_graph[chromosome.segments[i]] for i in matching_segment_indices])
             else:
                 continue
-        return Scores(molecule.index, chromosome.index, segment_matches)
+        return Scores(molecule.index, chromosome.index, segment_matches, len(molecule.segments))
 
     def proceeding(self, i: int):
         assert i in self.segment_matches
@@ -293,19 +294,23 @@ class MoleculeSegmentPath:
     forward_paths: \
         Dict[int, List[int]]  # keys are chromosome ids and values are lists of paths as segment ids as nodes.
     reverse_paths: Dict[int, List[int]]
+    total_segments: int
 
 
-def segment_paths_from_scores(scores: Generator[Scores, Any, None], optimum_path: bool = False) -> List[MoleculeSegmentPath]:
+def segment_paths_from_scores(scores: Generator[Scores, Any, None], optimum_path: bool = False) -> List[
+    MoleculeSegmentPath]:
     molecules: Dict[int, MoleculeSegmentPath] = dict()
     for score in scores:
         if abs(score.molecule_id) not in molecules:
             if score.molecule_id > 0:
                 molecules[abs(score.molecule_id)] = MoleculeSegmentPath(abs(score.molecule_id),
-                                                                        {score.chromosome_id: score.get_best_path(optimum_path)},
-                                                                        {})
+                                                                        {score.chromosome_id: score.get_best_path(
+                                                                            optimum_path)},
+                                                                        {}, score.total_segments)
             else:
                 molecules[abs(score.molecule_id)] = MoleculeSegmentPath(abs(score.molecule_id), {},
-                                                                        {score.chromosome_id: score.get_best_path(optimum_path)})
+                                                                        {score.chromosome_id: score.get_best_path(
+                                                                            optimum_path)}, score.total_segments)
         else:
             if score.molecule_id > 0:
                 molecules[abs(score.molecule_id)].forward_paths[score.chromosome_id] = score.get_best_path(optimum_path)
@@ -504,7 +509,7 @@ def get_molecules_in_region(chr_id, start, end, reference: MoleculesOnChromosome
     else:
         tscore, pvalue = stats.ttest_ind(inverted_sv_ratios, inverted_ref_ratios, equal_var=False)
         return reference_molecules_left, reference_molecules_right, sv_molecules_left, sv_molecules_right, (
-        tscore, pvalue)
+            tscore, pvalue)
 
 
 def find_boundaries(sig, peak, snr=1.5):
@@ -658,15 +663,32 @@ def check_inversion_from_unspecific_sv(unspecific_sv: UnspecificSV, thr: float =
 
 
 @dataclass
-class DeletionOrInsertion:
+class SmallDeletionOrInsertion:
     region: Tuple[int, int, int, int]
     score: float
+    potential_deletion_size: float
+
+
+@dataclass
+class Deletion:
+    region: Tuple[int, int, int, int]
+    size: float
+
+
+def check_deletion(unspecific_sv: UnspecificSV, chromosome: ChromosomeSeg) -> [SmallDeletionOrInsertion, Deletion]:
+    deletion_size: int = abs(unspecific_sv.region[2] - unspecific_sv.region[3])
+    if deletion_size >= (chromosome.segment_length/2):
+        return Deletion(unspecific_sv.region, deletion_size)
+    else:
+        return SmallDeletionOrInsertion(unspecific_sv.region, unspecific_sv.score, deletion_size)
+
 
 
 def find_specific_sv(unspecific_sv: UnspecificSV,
                      reference: MoleculesOnChromosomes,
                      candidate: MoleculesOnChromosomes) -> List[Any]:
     chromosomes = reference.chromosomes
+    first_chr_id = list(reference.chromosomes.keys())[0]
     svs = list()
     for chr_id in chromosomes:
         current_sv = check_translocation(unspecific_sv, chromosomes[chr_id])
@@ -679,7 +701,7 @@ def find_specific_sv(unspecific_sv: UnspecificSV,
         if type(current_sv) != UnspecificSV:
             svs.append(current_sv)
     if not len(svs):
-        svs.append(DeletionOrInsertion(unspecific_sv.region, unspecific_sv.score))
+        svs.append(check_deletion(unspecific_sv, chromosomes[first_chr_id]))
     return svs
 
 

@@ -71,13 +71,22 @@ class Fasta(utils.FastaObject):
 class SvdFromFastaArray:
     def __init__(self, fasta_array, digestion_array,
                  omsim_exec_path, omsim_enzyme_path,
-                 omsim_template_path, cov=50):
+                 omsim_template_path, cov=50, insertion_array=None):
         self.omsim = OmsimWrapper(omsim_exec_path, omsim_enzyme_path, omsim_template_path, cov=cov)
         digestion_array = np.sum(digestion_array, axis=0)
         self.digestion_indices = np.where(digestion_array > 0)[0]
         self.fasta_array = fasta_array[0]
         self.fasta_array_rev = fasta_array[1]
         self.tracked_changes = list()
+        self.insertion_array = insertion_array
+
+    def introduce_insertion(self, length=300000):
+        assert self.insertion_array is not None
+        assert self.insertion_array.shape[0] >= length
+        start = np.random.randint(0, self.fasta_array.shape[0] - length)
+        to_insert = self.insertion_array[:length]
+        self.tracked_changes.append((start, "ins"))
+        self.fasta_array = np.concatenate((self.fasta_array[:start], to_insert, self.fasta_array[start:]))
 
     def introduce_deletion(self, start_dist=50000, var=10000):
         locus = np.random.randint(0, self.fasta_array.shape[0]-start_dist-var)
@@ -201,8 +210,11 @@ if __name__ == "__main__":
     omsim_param_template_path = parameters["omsim_template_path"]
     omsim_enzyme_path = parameters["omsim_enzyme_path"]
 
+
+
     fasta = Fasta("data/genomes/yeast.fasta")
     print(fasta.fasta_array.shape)
+    insertion_array = fasta.fasta_array[0][-1000000:].copy()
     fasta.write_all_chr(fname="temp.fasta", lim=10000000) # concats chromosomes into a single fasta entry
     fasta = Fasta("temp.fasta") # reloads fasta
     print(fasta.fasta_array.shape)
@@ -246,15 +258,17 @@ if __name__ == "__main__":
     import itertools
     for _ in range(5):
         svd_fasta = SvdFromFastaArray(fasta.fasta_array, fasta.fasta_digestion_array, omsim_exec_path, omsim_enzyme_path,
-                                      omsim_param_template_path, cov=1000)
+                                      omsim_param_template_path, cov=1000, insertion_array=insertion_array)
         print(svd_fasta.fasta_array.shape)
         # svd_fasta.copy_paste(length=200000, inverted=True)
-        svd_fasta.inplace_inversion(200000)
+        # svd_fasta.inplace_inversion(200000)
+        # svd_fasta.introduce_insertion(300000)
         # svd_fasta.introduce_deletion_label_based(np.random.choice([-1, 0, 1, 2, 3]))
+        svd_fasta.introduce_deletion(150000)
         # svd_fasta.copy_paste(length=200000)
         print(svd_fasta.fasta_array.shape)
         print(svd_fasta.tracked_changes)
         # svd_fasta.write(fname=f"simulated_svd2/temp_svd_del{svd_fasta.tracked_changes[0][0]}-{svd_fasta.tracked_changes[0][1]}-{svd_fasta.tracked_changes[0][-1]}.fasta")
         # svd_fasta.write(fname=f"data/SVs3_dup_inv/temp_svd_dup_inv{svd_fasta.tracked_changes[0][0]}-{svd_fasta.tracked_changes[0][1]}-{svd_fasta.tracked_changes[0][2]}-{svd_fasta.tracked_changes[0][-1]}.fasta")
         svd_fasta.write(
-            fname=f"data/SVs3_dup_inv/{'-'.join([str(y) for y in itertools.chain.from_iterable(svd_fasta.tracked_changes)])}.fasta")
+            fname=f"data/SVs_del/{'-'.join([str(y) for y in itertools.chain.from_iterable(svd_fasta.tracked_changes)])}.fasta")
