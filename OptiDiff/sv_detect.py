@@ -757,7 +757,9 @@ def find_specific_sv(unspecific_sv: UnspecificSV,
         current_sv = check_translocation_or_inversion(unspecific_sv, chromosomes[chr_id])
         if type(current_sv) == Translocation:
             current_sv = check_duplication(current_sv, reference, candidate)
-        current_sv = check_translocation_or_inversion(unspecific_sv, chromosomes[chr_id], inversion_test=current_sv)
+        inversion = check_translocation_or_inversion(unspecific_sv, chromosomes[chr_id], inversion_test=current_sv)
+        if type(inversion) == Inversion:
+            current_sv = inversion
         if type(current_sv) != UnspecificSV:
             svs.append(current_sv)
     if not len(svs):
