@@ -579,11 +579,13 @@ class Inversion:
 
 def check_translocation_or_inversion(unspecific_sv: UnspecificSV,
                                      chromosome: ChromosomeSeg,
-                                     thr: float = 5, inversion_test: bool = False) -> [Translocation, UnspecificSV,
-                                                                                       Inversion]:
-    filt_func = lambda x: molecule_is_inverted_in_chromosome(x, chromosome_id)
+                                     thr: float = 5,
+                                     inversion_test: [bool, Translocation, Duplication, UnspecificSV] = False) -> [
+    Translocation, UnspecificSV, Inversion]:
+    chromosome_id = chromosome.index
+    def filt_func(x):
+        return molecule_is_inverted_in_chromosome(x, chromosome_id)
     if inversion_test:
-        chromosome_id = chromosome.index
         translocation_ratio_left = get_translocation_ratio_signal(
             list(filter(filt_func, unspecific_sv.reference_molecules_left)),
             list(filter(filt_func, unspecific_sv.sv_candidate_molecules_left)),
@@ -613,7 +615,7 @@ def check_translocation_or_inversion(unspecific_sv: UnspecificSV,
             top_left = mid - chromosome.segment_length // 2
             top_right = mid + chromosome.segment_length // 2
         if inversion_test:
-            return Inversion(unspecific_sv)
+            return Inversion(inversion_test)
         else:
             return Translocation(unspecific_sv.region, (chromosome.index, min(top_left, top_right),
                                                         max(top_left, top_right)), score)
@@ -635,7 +637,7 @@ def check_translocation_or_inversion(unspecific_sv: UnspecificSV,
             top_all = list(sorted([x for x in peak_indices_all], key=lambda x: translocation_ratio_all[int(x)]))[-1]
             score = translocation_ratio_left[int(top_all)]
             if inversion_test:
-                return Inversion(unspecific_sv)
+                return Inversion(inversion_test)
             else:
                 return Translocation(unspecific_sv.region, (chromosome.index,
                                                             max(0, top_all - chromosome.segment_length // 2),
@@ -754,9 +756,8 @@ def find_specific_sv(unspecific_sv: UnspecificSV,
     for chr_id in chromosomes:
         current_sv = check_translocation_or_inversion(unspecific_sv, chromosomes[chr_id])
         if type(current_sv) == Translocation:
-            print("inv check")
             current_sv = check_duplication(current_sv, reference, candidate)
-        current_sv = check_translocation_or_inversion(unspecific_sv, chromosomes[chr_id], inversion_test=True)
+        current_sv = check_translocation_or_inversion(unspecific_sv, chromosomes[chr_id], inversion_test=current_sv)
         if type(current_sv) != UnspecificSV:
             svs.append(current_sv)
     if not len(svs):
