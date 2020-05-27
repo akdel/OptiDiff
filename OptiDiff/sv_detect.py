@@ -1,5 +1,5 @@
 from OptiScan import utils
-from typing import List, Tuple, Dict, Generator, Any
+from typing import List, Tuple, Dict, Generator, Any, Iterator
 import numpy as np
 from scipy import ndimage
 import matplotlib.pyplot as plt
@@ -8,7 +8,9 @@ from dataclasses import dataclass
 import numba as nb
 from scipy import stats, signal
 import itertools
+import random
 
+BNX_HEAD = "/home/biridir/PycharmProjects/OptiScan/bnx_head.txt"
 
 @nb.njit
 def countSetBits(n):
@@ -583,8 +585,10 @@ def check_translocation_or_inversion(unspecific_sv: UnspecificSV,
                                      inversion_test: [bool, Translocation, Duplication, UnspecificSV] = False) -> [
     Translocation, UnspecificSV, Inversion]:
     chromosome_id = chromosome.index
+
     def filt_func(x):
         return molecule_is_inverted_in_chromosome(x, chromosome_id)
+
     if inversion_test:
         translocation_ratio_left = get_translocation_ratio_signal(
             list(filter(filt_func, unspecific_sv.reference_molecules_left)),
@@ -780,6 +784,127 @@ def fasta_to_cmap(fasta_in_path, cmap_out_path, digestion_motif="GCTCTTC",
     fasta.fill_complete_fasta_array()
     fasta.write_fasta_to_cmap(digestion_sequence=digestion_motif, output_file_name=cmap_out_path,
                               enzyme_name=enzyme_name, channel=channel)
+
+
+def filter_and_prepare_molecules_on_chromosomes(
+        cmap_file_location: str,
+        bnx_file_location: str,
+        subsample_ratio: float = 1.0,
+        nbits: int = 64, segment_length: int = 275,
+        zoom_factor: int = 500, minimum_molecule_length: int = 150_000,
+        distance_threshold: float = 1.7) -> MoleculesOnChromosomes:
+    cmap: CmapToSignal = CmapToSignal(cmap_file_location)
+    cmap.prepare(segment_length=segment_length, nbits=64)
+    chromosomes: List[ChromosomeSeg] = [ChromosomeSeg.from_cmap_signals(cmap, chr_id) for chr_id in
+                                        {int(x[0]) for x in cmap.cmap_lines if len(x)}]
+    bnx_lines = get_subsampled_bnx_lines(bnx_file_location,
+                                         minimum_molecule_length,
+                                         subsample_ratio)
+
+    molecules: Iterator[MoleculeSeg] = itertools.chain.from_iterable(
+        (
+            molecule_generator_from_bnx_lines(bnx_lines,
+                                              False,
+                                              segment_length,
+                                              zoom_factor,
+                                              nbits),
+            molecule_generator_from_bnx_lines(bnx_lines,
+                                              True,
+                                              segment_length,
+                                              zoom_factor,
+                                              nbits),
+        )
+    )
+    return MoleculesOnChromosomes.from_molecules_and_chromosomes(molecules, chromosomes,
+                                                                 distance_thr=distance_threshold)
+
+
+@dataclass
+class SvResult:
+    SV: [Deletion, SmallDeletionOrInsertion, Translocation, Duplication, Inversion]
+    sample_bnx_file: str
+    reference_bnx_file: str
+    sample_subsample: float
+    reference_subsample: float
+    subsampled_sample_bnx_file: str
+    subsampled_reference_bnx_file: str
+
+
+def detect_structural_variation_for_multiple_datasets(cmap_reference_file: str,
+                                                      reference_bnx_file: str,
+                                                      sv_candidate_bnx_files: List[str],
+                                                      sv_subsample_ratio: float = 1.0,
+                                                      reference_subsample_ratio: float = 1.0,
+                                                      nbits: int = 64, segment_length: int = 275,
+                                                      zoom_factor: int = 500,
+                                                      minimum_molecule_length: int = 150_000,
+                                                      distance_threshold: float = 1.7,
+                                                      unspecific_sv_threshold: float = 10.0) -> List[SvResult]:
+    reference_molecules_on_chromosomes: MoleculesOnChromosomes = \
+        filter_and_prepare_molecules_on_chromosomes(
+            cmap_reference_file,
+            reference_bnx_file,
+            subsample_ratio=reference_subsample_ratio,
+            nbits=nbits,
+            segment_length=segment_length,
+            zoom_factor=zoom_factor,
+            minimum_molecule_length=minimum_molecule_length,
+            distance_threshold=distance_threshold
+        )
+    svs_found: List[SvResult] = list()
+    for sv_candidate_bnx_file in sv_candidate_bnx_files:
+        sv_candidate_molecules_on_chromosomes: MoleculesOnChromosomes = \
+            filter_and_prepare_molecules_on_chromosomes(
+                cmap_reference_file,
+                sv_candidate_bnx_file,
+                subsample_ratio=sv_subsample_ratio,
+                nbits=nbits,
+                segment_length=segment_length,
+                zoom_factor=zoom_factor,
+                minimum_molecule_length=minimum_molecule_length,
+                distance_threshold=distance_threshold
+            )
+        for unspecific_sv in find_unspecific_sv_sites(reference_molecules_on_chromosomes,
+                                                      sv_candidate_molecules_on_chromosomes,
+                                                      z_thr=unspecific_sv_threshold):
+            if unspecific_sv.region:
+                svs_found.append(
+                    SvResult(
+                        find_specific_sv(unspecific_sv,
+                                         reference_molecules_on_chromosomes,
+                                         sv_candidate_molecules_on_chromosomes),
+                        sample_bnx_file=sv_candidate_bnx_file,
+                        sample_subsample=sv_subsample_ratio,
+                        reference_bnx_file=reference_bnx_file,
+                        reference_subsample=reference_subsample_ratio,
+                        subsampled_sample_bnx_file=f"{sv_candidate_bnx_file}.{sv_subsample_ratio}",
+                        subsampled_reference_bnx_file=f"{reference_bnx_file}.{reference_subsample_ratio}"
+                    )
+                )
+    return svs_found
+
+
+def get_subsampled_bnx_lines(bnx_path: str,
+                             minimum_molecule_length: int,
+                             subsample_ratio: float):
+    bnx: utils.BnxParser = utils.BnxParser(bnx_path)
+    bnx.read_bnx_file()
+    lines = random.choices(
+        [bnx.bnx_arrays[i] for i in range(len(bnx.bnx_arrays))
+         if float(bnx.bnx_arrays[i]["info"][2]) >= minimum_molecule_length],
+        k=int(len(bnx.bnx_arrays) * subsample_ratio)
+    )
+    used_molecule_ids = [int(x["info"][1]) for x in lines]
+    bnx.write_bnx_for_list_of_molecules(used_molecule_ids, f"{bnx_path}.{subsample_ratio}", bnx_head_file=BNX_HEAD)
+    return lines
+
+
+def molecule_generator_from_bnx_lines(bnx_lines, reverse: bool, segment_length: int, zoom_factor: int, nbits: int) -> \
+        Iterator[MoleculeSeg]:
+    for line in bnx_lines:
+        yield MoleculeSeg.from_bnx_line(line, reverse=reverse, segment_length=segment_length,
+                                        zoom_factor=zoom_factor, nbits=nbits)
+
 
 
 if __name__ == "__main__":
