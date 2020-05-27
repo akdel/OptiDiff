@@ -895,7 +895,9 @@ def get_subsampled_bnx_lines(bnx_path: str,
         k=int(len(bnx.bnx_arrays) * subsample_ratio)
     )
     used_molecule_ids = [int(x["info"][1]) for x in lines]
-    bnx.write_bnx_for_list_of_molecules(used_molecule_ids, f"{bnx_path}.{subsample_ratio}", bnx_head_file=BNX_HEAD)
+    array_dict = get_array_dict(bnx)
+    bnx.bnx_arrays = [array_dict[x] for x in used_molecule_ids]
+    bnx.write_arrays_as_bnx(f"{bnx_path}.{subsample_ratio}")
     return lines
 
 
@@ -905,6 +907,9 @@ def molecule_generator_from_bnx_lines(bnx_lines, reverse: bool, segment_length: 
         yield MoleculeSeg.from_bnx_line(line, reverse=reverse, segment_length=segment_length,
                                         zoom_factor=zoom_factor, nbits=nbits)
 
+
+def get_array_dict(bnx_obj: utils.BnxParser):
+    return {int(x["info"][1]): x for x in bnx_obj.bnx_arrays}
 
 
 if __name__ == "__main__":
