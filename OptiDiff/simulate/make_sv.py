@@ -2,6 +2,49 @@ from OptiScan import utils
 import numpy as np
 import numba as nb
 from subprocess import check_call as ck
+from dataclasses import dataclass
+from typing import List, Tuple, Dict, Generator, Any, Iterator
+import itertools
+
+
+def fasta_to_cmap_indices(out_file: str, fasta_file: str, digestion_motif: str = "GCTCTTC", channel_id: int = 1):
+    def seq_to_cmap_indices(sequence: List[str], digestion_motif: str = "GCTCTTC"):
+        for i in range(len(sequence) - len(digestion_motif) + 1):
+            if "".join(sequence[i:i + len(digestion_motif)]) == digestion_motif:
+                yield i + len(digestion_motif)
+
+    def reverse_complement(sequence: str):
+        revdict = {"A": "T", "T": "A",
+                   "C": "G", "G": "C"}
+        for s in sequence[::-1]:
+            yield revdict[s]
+
+    def get_seq_to_cmap_indices(sequence, digestion_motif):
+        forward = seq_to_cmap_indices(sequence, digestion_motif)
+        reverse = (len(sequence) - x - len(digestion_motif) // 2 for x in
+                   seq_to_cmap_indices(list(reverse_complement(sequence)), digestion_motif))
+        return sorted(itertools.chain.from_iterable((forward, reverse)))
+
+    f = open(fasta_file, "r")
+    of = open(out_file, "w")
+    _id = 0
+    for k, g in itertools.groupby(f.readlines(), lambda x: x.startswith(">")):
+        if not k:
+            seq = "".join([x.strip() for x in g])
+            digestion_indices = get_seq_to_cmap_indices(seq, digestion_motif)
+            try:
+                last_index = digestion_indices[-1] + 1
+            except IndexError:
+                continue
+            for i in range(len(digestion_indices)):
+                of.write(
+                    f"{_id}\t{last_index}\t{len(digestion_indices)}\t{i + 1}\t{channel_id}\t{digestion_indices[i]}\t1.0\t1\t1\n"
+                )
+            of.write(f"{_id}\t{last_index}\t{len(digestion_indices)}\t{len(digestion_indices) + 1}\t{0}\t{digestion_indices[i]}\t1.0\t1\t1\n")
+        else:
+            _id += 1
+    f.close()
+    of.close()
 
 
 class Fasta(utils.FastaObject):

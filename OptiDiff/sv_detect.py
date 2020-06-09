@@ -390,6 +390,11 @@ class MoleculesOnChromosomes:
         sig[np.where(sig < 1)[0]] = 1
         return sig
 
+    def plot_chromosome_segment(self, segment_id: int, chromosome_id: int):
+        chromosome: ChromosomeSeg = self.chromosomes[chromosome_id]
+        np.unpackbits(chromosome.segments[segment_id])
+        pass
+
     def inverted_ratio_from_chromosome(self, chromosome_id: int) -> np.ndarray:
         chromosome: ChromosomeSeg = self.chromosomes[chromosome_id]
         inverted: np.ndarray = np.zeros(int(chromosome.kb_indices[-1] + (chromosome.segment_length / 2) + 1)) + 0.001
@@ -910,6 +915,7 @@ def molecule_generator_from_bnx_lines(bnx_lines, reverse: bool, segment_length: 
 
 def get_array_dict(bnx_obj: utils.BnxParser):
     return {int(x["info"][1]): x for x in bnx_obj.bnx_arrays}
+
 
 
 if __name__ == "__main__":
