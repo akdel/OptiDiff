@@ -17,7 +17,10 @@ def fasta_to_cmap_indices(out_file: str, fasta_file: str, digestion_motif: str =
         revdict = {"A": "T", "T": "A",
                    "C": "G", "G": "C"}
         for s in sequence[::-1]:
-            yield revdict[s]
+            if s in revdict:
+                yield revdict[s]
+            else:
+                yield s
 
     def get_seq_to_cmap_indices(sequence, digestion_motif):
         forward = seq_to_cmap_indices(sequence, digestion_motif)
