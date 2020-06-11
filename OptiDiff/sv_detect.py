@@ -235,6 +235,8 @@ class Scores:
             return Scores(molecule.index, chromosome.index, {}, 0)
         if molecule.compressed_segments is None:
             molecule.compress()
+        if not len(molecule.compressed_segments):
+            return Scores(molecule.index, chromosome.index, dict(), len(molecule.segments))
         mol_bits: np.ndarray = molecule.compressed_segments.view("uint8").reshape(
             (molecule.compressed_segments.shape[0], -1))
         chr_bits: np.ndarray = chromosome.segments.view("uint8").reshape((chromosome.segments.shape[0], -1))
