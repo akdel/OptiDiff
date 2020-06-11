@@ -185,15 +185,18 @@ class ChromosomeSeg:
     nbits: int
 
     @classmethod
-    def from_cmap_signals(cls, cmap_signals: CmapToSignal, chromosome_id: int):
+    def from_cmap_signals(cls, cmap_signals: CmapToSignal, chromosome_id: int, density_filter: int = 40):
         if cmap_signals.prepared:
             start, end = cmap_signals.chromosome_segment_indices[
                 list(cmap_signals.position_index.keys()).index(chromosome_id)]
             compressed_segments: np.ndarray = cmap_signals.chromosome_lsh.search_results[start:end]
-            kb_segment_indices: np.ndarray = cmap_signals.position_index[chromosome_id] / 2
+            kb_segment_indices: np.ndarray = cmap_signals.position_index[chromosome_id] / 2 # TODO: do this using zoom factor
             segment_graph: Dict[bytes, List[int]] = dict()
             label_densities: Dict[bytes, int] = dict()
             for i, segment in enumerate(compressed_segments):
+                if cmap_signals.chromosome_segment_density[chromosome_id][i] >= density_filter:
+                    segment = b'0'
+                    compressed_segments[i] = b'0'
                 if segment not in segment_graph:
                     segment_graph[segment] = [i]
                     label_densities[segment] = cmap_signals.chromosome_segment_density[chromosome_id][i]
@@ -797,10 +800,11 @@ def filter_and_prepare_molecules_on_chromosomes(
         subsample_ratio: float = 1.0,
         nbits: int = 64, segment_length: int = 275,
         zoom_factor: int = 500, minimum_molecule_length: int = 150_000,
-        distance_threshold: float = 1.7) -> MoleculesOnChromosomes:
+        distance_threshold: float = 1.7,
+        density_filter: int = 40) -> MoleculesOnChromosomes:
     cmap: CmapToSignal = CmapToSignal(cmap_file_location)
     cmap.prepare(segment_length=segment_length, nbits=64)
-    chromosomes: List[ChromosomeSeg] = [ChromosomeSeg.from_cmap_signals(cmap, chr_id) for chr_id in
+    chromosomes: List[ChromosomeSeg] = [ChromosomeSeg.from_cmap_signals(cmap, chr_id, density_filter=density_filter) for chr_id in
                                         {int(x[0]) for x in cmap.cmap_lines if len(x)}]
     bnx_lines = get_subsampled_bnx_lines(bnx_file_location,
                                          minimum_molecule_length,
@@ -844,7 +848,8 @@ def detect_structural_variation_for_multiple_datasets(cmap_reference_file: str,
                                                       zoom_factor: int = 500,
                                                       minimum_molecule_length: int = 150_000,
                                                       distance_threshold: float = 1.7,
-                                                      unspecific_sv_threshold: float = 10.0) -> List[SvResult]:
+                                                      unspecific_sv_threshold: float = 10.0,
+                                                      density_filter: int = 40) -> List[SvResult]:
     reference_molecules_on_chromosomes: MoleculesOnChromosomes = \
         filter_and_prepare_molecules_on_chromosomes(
             cmap_reference_file,
@@ -854,7 +859,8 @@ def detect_structural_variation_for_multiple_datasets(cmap_reference_file: str,
             segment_length=segment_length,
             zoom_factor=zoom_factor,
             minimum_molecule_length=minimum_molecule_length,
-            distance_threshold=distance_threshold
+            distance_threshold=distance_threshold,
+            density_filter=density_filter
         )
     svs_found: List[SvResult] = list()
     for sv_candidate_bnx_file in sv_candidate_bnx_files:
@@ -867,7 +873,8 @@ def detect_structural_variation_for_multiple_datasets(cmap_reference_file: str,
                 segment_length=segment_length,
                 zoom_factor=zoom_factor,
                 minimum_molecule_length=minimum_molecule_length,
-                distance_threshold=distance_threshold
+                distance_threshold=distance_threshold,
+                density_filter=density_filter
             )
         for unspecific_sv in find_unspecific_sv_sites(reference_molecules_on_chromosomes,
                                                       sv_candidate_molecules_on_chromosomes,
