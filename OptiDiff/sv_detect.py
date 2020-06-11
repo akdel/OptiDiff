@@ -81,7 +81,7 @@ class MoleculeSeg:
             return randoms
 
         randoms: np.ndarray = create_randoms()
-        filtered_values = np.array(self.label_densities) <= self.lower_bound
+        filtered_values = np.array(self.label_densities) >= self.lower_bound
         self.compressed_segments: np.ndarray = lsh.VectorsInLSH(self.nbits,
                                                                 self.segments,
                                                                 custom_table=randoms).search_results[filtered_values]
