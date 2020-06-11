@@ -198,12 +198,14 @@ class ChromosomeSeg:
             segment_graph: Dict[bytes, List[int]] = dict()
             label_densities: Dict[bytes, int] = dict()
             for i, segment in enumerate(compressed_segments):
-                if cmap_signals.chromosome_segment_density[chromosome_id][i] >= density_filter:
+                current_density = cmap_signals.chromosome_segment_density[chromosome_id][i]
+                if current_density >= density_filter:
                     segment = b'0'
                     compressed_segments[i] = b'0'
+                    current_density = 1
                 if segment not in segment_graph:
                     segment_graph[segment] = [i]
-                    label_densities[segment] = cmap_signals.chromosome_segment_density[chromosome_id][i]
+                    label_densities[segment] = current_density
                 else:
                     segment_graph[segment].append(i)
         else:
