@@ -49,11 +49,12 @@ class MoleculeSeg:
     segment_length: int = 200
     nbits: int = 64
     compressed_segments = None
+    lower_bound: int = 5
 
     @classmethod
     def from_bnx_line(cls, bnx_array_entry: dict, reverse=False,
                       segment_length: int = 200, zoom_factor: int = 500,
-                      nbits=64):
+                      nbits: int = 64, lower_bound: int = 5):
         index: int = int(bnx_array_entry["info"][1])
         length: float = float(bnx_array_entry["info"][2])
         labels: np.ndarray = (np.array(bnx_array_entry["labels"]) / zoom_factor).astype(int)
@@ -67,7 +68,7 @@ class MoleculeSeg:
         segments, label_density = get_segments(segment_length, log_sig, labels)
         return cls(index, length, np.array(segments), label_density,
                    zoom_factor=zoom_factor, segment_length=segment_length,
-                   nbits=nbits)
+                   nbits=nbits, lower_bound=lower_bound)
 
     def compress(self):
         def create_randoms(nbits=self.nbits, l=self.segment_length):
@@ -83,6 +84,7 @@ class MoleculeSeg:
         self.compressed_segments: np.ndarray = lsh.VectorsInLSH(self.nbits,
                                                                 self.segments,
                                                                 custom_table=randoms).search_results
+        self.compressed_segments[np.array(self.label_densities) <= self.lower_bound] = b'\xff' * (self.nbits//8) # This gives the maximum value for that many bytes
 
 
 def get_segments(segment_length: int, sig: np.ndarray, labels: List[int]):
