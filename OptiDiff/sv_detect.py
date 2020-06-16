@@ -228,17 +228,19 @@ class Scores:
     chromosome_id: int
     segment_matches: Dict[int, np.ndarray]
     total_segments: int
+    segments: List[bytes] # numpy bytes array
 
     @classmethod
     def from_molecule_and_chromosome(cls, molecule: MoleculeSeg, chromosome: ChromosomeSeg, distance_thr: float = 1.8):
         assert molecule.nbits == chromosome.nbits
         assert molecule.segment_length == chromosome.segment_length
         if molecule.segments.shape[0] <= 1:
-            return Scores(molecule.index, chromosome.index, {}, 0)
+            return Scores(molecule.index, chromosome.index, {}, 0, [])
         if molecule.compressed_segments is None:
             molecule.compress()
         if not len(molecule.compressed_segments):
-            return Scores(molecule.index, chromosome.index, dict(), len(molecule.segments))
+            return Scores(molecule.index, chromosome.index, dict(),
+                          len(molecule.segments), list(molecule.compressed_segments))
         mol_bits: np.ndarray = molecule.compressed_segments.view("uint8").reshape(
             (molecule.compressed_segments.shape[0], -1))
         chr_bits: np.ndarray = chromosome.segments.view("uint8").reshape((chromosome.segments.shape[0], -1))
@@ -253,7 +255,8 @@ class Scores:
                     [chromosome.compressed_segment_graph[chromosome.segments[i]] for i in matching_segment_indices])
             else:
                 continue
-        return Scores(molecule.index, chromosome.index, segment_matches, len(molecule.segments))
+        return Scores(molecule.index, chromosome.index, segment_matches,
+                      len(molecule.segments), list(molecule.compressed_segments))
 
     def proceeding(self, i: int):
         assert i in self.segment_matches
@@ -308,27 +311,36 @@ class MoleculeSegmentPath:
         Dict[int, List[int]]  # keys are chromosome ids and values are lists of paths as segment ids as nodes.
     reverse_paths: Dict[int, List[int]]
     total_segments: int
+    segments: List[Tuple[int, bytes]]
+
+    def unpack_segment(self, segment_id, nbits=64):
+        i, b = self.segments[segment_id]
+        return np.unpackbits(np.array([b], dtype=f"|S{nbits // 8}").view("uint8"))
 
 
 def segment_paths_from_scores(scores: Generator[Scores, Any, None], optimum_path: bool = False) -> List[
     MoleculeSegmentPath]:
     molecules: Dict[int, MoleculeSegmentPath] = dict()
     for score in scores:
+        segments: List[Tuple[int, bytes]] = [(int(score.segment_matches[i][0]), score.segments[i]) if i in score.segment_matches else (-1, score.segments[i]) for i in score.segment_matches]
         if abs(score.molecule_id) not in molecules:
             if score.molecule_id > 0:
                 molecules[abs(score.molecule_id)] = MoleculeSegmentPath(abs(score.molecule_id),
                                                                         {score.chromosome_id: score.get_best_path(
                                                                             optimum_path)},
-                                                                        {}, score.total_segments)
+                                                                        {}, score.total_segments, segments)
             else:
                 molecules[abs(score.molecule_id)] = MoleculeSegmentPath(abs(score.molecule_id), {},
                                                                         {score.chromosome_id: score.get_best_path(
-                                                                            optimum_path)}, score.total_segments)
+                                                                            optimum_path)}, score.total_segments,
+                                                                        segments)
         else:
             if score.molecule_id > 0:
                 molecules[abs(score.molecule_id)].forward_paths[score.chromosome_id] = score.get_best_path(optimum_path)
+                molecules[abs(score.molecule_id)].segments += segments
             else:
                 molecules[abs(score.molecule_id)].reverse_paths[score.chromosome_id] = score.get_best_path(optimum_path)
+                molecules[abs(score.molecule_id)].segments += segments
 
     return list(molecules.values())
 
@@ -437,8 +449,8 @@ class UnspecificSV:
         assert chromosome.index == self.region[0]
         chrom_id: int = self.region[0]
         colors = ["green", "yellow", "orange", "pink", "brown", "black", "blue", "red"]
-        ci = 0
-        i = 0
+        ci: int = 0
+        i: int = 0
         distances: np.ndarray = chromosome.kb_indices
         if data == "reference":
             if side == "left":
