@@ -54,10 +54,10 @@ class MoleculeSeg:
     @classmethod
     def from_bnx_line(cls, bnx_array_entry: dict, reverse=False,
                       segment_length: int = 200, zoom_factor: int = 500,
-                      nbits: int = 64, lower_bound: int = 3):
+                      nbits: int = 64, lower_bound: int = 3, snr: float = 3.5):
         index: int = int(bnx_array_entry["info"][1])
         length: float = float(bnx_array_entry["info"][2])
-        labels: np.ndarray = (np.array(bnx_array_entry["labels"]) / zoom_factor).astype(int)
+        labels: np.ndarray = (np.array(bnx_array_entry["labels"]) / zoom_factor).astype(int)[np.array(bnx_array_entry["label_snr"]) >= snr]
         sig: np.ndarray = np.zeros(int(length) // zoom_factor + 1)
         sig[labels] = 5000.
         log_sig: np.ndarray = np.log1p(ndimage.gaussian_filter1d(sig, sigma=1))
