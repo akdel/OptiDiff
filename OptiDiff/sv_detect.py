@@ -57,7 +57,7 @@ class MoleculeSeg:
                       nbits: int = 64, lower_bound: int = 3, snr: float = 3.5):
         index: int = int(bnx_array_entry["info"][1])
         length: float = float(bnx_array_entry["info"][2])
-        labels: np.ndarray = (np.array(bnx_array_entry["labels"]) / zoom_factor).astype(int)[np.array(bnx_array_entry["label_snr"]) >= snr]
+        labels: np.ndarray = (np.array(bnx_array_entry["labels"][:-1]) / zoom_factor).astype(int)[np.array(bnx_array_entry["label_snr"]) >= snr]
         sig: np.ndarray = np.zeros(int(length) // zoom_factor + 1)
         sig[labels] = 5000.
         log_sig: np.ndarray = np.log1p(ndimage.gaussian_filter1d(sig, sigma=1))
