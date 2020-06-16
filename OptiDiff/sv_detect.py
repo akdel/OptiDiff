@@ -231,7 +231,7 @@ class Scores:
     segments: List[bytes] # numpy bytes array
 
     @classmethod
-    def from_molecule_and_chromosome(cls, molecule: MoleculeSeg, chromosome: ChromosomeSeg, distance_thr: float = 1.8):
+    def from_molecule_and_chromosome(cls, molecule: MoleculeSeg, chromosome: ChromosomeSeg, distance_thr: float = 1.8, max_distance_thr: float = 8):
         assert molecule.nbits == chromosome.nbits
         assert molecule.segment_length == chromosome.segment_length
         if molecule.segments.shape[0] <= 1:
@@ -249,6 +249,8 @@ class Scores:
         for i in range(mol_bits.shape[0]):
             densities = (chromosome.label_densities[:distances.shape[1]] + molecule.label_densities[
                 i]) / 2 / distance_thr
+            # print(densities)
+            densities[densities > max_distance_thr] = max_distance_thr
             matching_segment_indices = list(np.where(distances[i] <= densities)[0])
             if len(matching_segment_indices):
                 segment_matches[i] = np.concatenate(
@@ -377,8 +379,10 @@ class MoleculesOnChromosomes:
     def from_molecules_and_chromosomes(cls,
                                        molecules: List[MoleculeSeg],
                                        chromosomes: List[ChromosomeSeg],
-                                       distance_thr: float = 1.8, optimum_path: bool = False):
-        scores: Generator[Scores, Any, None] = (Scores.from_molecule_and_chromosome(y, x, distance_thr=distance_thr)
+                                       distance_thr: float = 1.8, optimum_path: bool = False,
+                                       max_distance_thr: float = 8.0):
+        scores: Generator[Scores, Any, None] = (Scores.from_molecule_and_chromosome(y, x, distance_thr=distance_thr,
+                                                                                    max_distance_thr=max_distance_thr)
                                                 for y in molecules for x in chromosomes)
         molecule_segment_paths: List[MoleculeSegmentPath] = segment_paths_from_scores(scores, optimum_path=optimum_path)
         chromosomes_dict: Dict[int, ChromosomeSeg] = {chromosome.index: chromosome for chromosome in chromosomes}
