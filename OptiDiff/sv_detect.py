@@ -411,8 +411,8 @@ class MoleculesOnChromosomes:
             current = np.zeros(sig.shape[0])
             for seg in mol_seg:
                 start, end = int(chromosome.kb_indices[seg]), \
-                             int(chromosome.kb_indices[seg] + (chromosome.segment_length / 2 / self.distance_thr))
-                current[start: end] = signal.windows.gaussian(end - start, (end - start) * 0.5)
+                             int(chromosome.kb_indices[seg] + (chromosome.segment_length / 2 ))
+                current[start: end] = 1 # signal.windows.gaussian(end - start, (end - start) * 0.5)
             sig += current
         sig[np.where(sig < 1)[0]] = 1
         return sig
