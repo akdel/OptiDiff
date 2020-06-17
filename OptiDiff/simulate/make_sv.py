@@ -28,10 +28,10 @@ def fasta_to_cmap_indices(out_file: str, fasta_file: str, digestion_motif: str =
                    seq_to_cmap_indices(list(reverse_complement(sequence)), digestion_motif))
         return sorted(itertools.chain.from_iterable((forward, reverse)))
 
-    f = open(fasta_file, "r")
+    # f = open(fasta_file, "r")
     of = open(out_file, "w")
     _id = 0
-    for k, g in itertools.groupby(f.readlines(), lambda x: x.startswith(">")):
+    for k, g in itertools.groupby((x for x in open(fasta_file, "r")), lambda x: x.startswith(">")):
         if not k:
             seq = "".join([x.strip() for x in g])
             digestion_indices = get_seq_to_cmap_indices(seq, digestion_motif)
@@ -46,7 +46,7 @@ def fasta_to_cmap_indices(out_file: str, fasta_file: str, digestion_motif: str =
             of.write(f"{_id}\t{last_index}\t{len(digestion_indices)}\t{len(digestion_indices) + 1}\t{0}\t{digestion_indices[i]}\t1.0\t1\t1\n")
         else:
             _id += 1
-    f.close()
+    # f.close()
     of.close()
 
 
