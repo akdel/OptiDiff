@@ -313,18 +313,21 @@ class MoleculeSegmentPath:
         Dict[int, List[int]]  # keys are chromosome ids and values are lists of paths as segment ids as nodes.
     reverse_paths: Dict[int, List[int]]
     total_segments: int
-    segments: List[Tuple[int, bytes, int]]
+    segments: List[Tuple[int, bytes, int, bool]]
 
     def unpack_segment(self, segment_id, nbits=64):
-        i, b = self.segments[segment_id]
-        return np.unpackbits(np.array([b], dtype=f"|S{nbits // 8}").view("uint8"))
+        i, b, _, forward = self.segments[segment_id]
+        if forward:
+            return np.unpackbits(np.array([b], dtype=f"|S{nbits // 8}").view("uint8"))
+        else:
+            return np.unpackbits(np.array([b], dtype=f"|S{nbits // 8}").view("uint8"))[::-1]
 
 
 def segment_paths_from_scores(scores: Generator[Scores, Any, None], optimum_path: bool = False) -> List[
     MoleculeSegmentPath]:
     molecules: Dict[int, MoleculeSegmentPath] = dict()
     for score in scores:
-        segments: List[Tuple[int, bytes, int]] = [(int(score.segment_matches[i][0]), score.segments[i], score.chromosome_id) if i in score.segment_matches else (-1, score.segments[i]) for i in score.segment_matches]
+        segments: List[Tuple[int, bytes, int, bool]] = [(int(score.segment_matches[i][0]), score.segments[i], score.chromosome_id, score.molecule_id > 0) if i in score.segment_matches else (-1, score.segments[i]) for i in score.segment_matches]
         if abs(score.molecule_id) not in molecules:
             if score.molecule_id > 0:
                 molecules[abs(score.molecule_id)] = MoleculeSegmentPath(abs(score.molecule_id),
