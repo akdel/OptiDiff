@@ -313,7 +313,7 @@ class MoleculeSegmentPath:
         Dict[int, List[int]]  # keys are chromosome ids and values are lists of paths as segment ids as nodes.
     reverse_paths: Dict[int, List[int]]
     total_segments: int
-    segments: List[Tuple[int, bytes]]
+    segments: List[Tuple[int, bytes, int]]
 
     def unpack_segment(self, segment_id, nbits=64):
         i, b = self.segments[segment_id]
@@ -324,7 +324,7 @@ def segment_paths_from_scores(scores: Generator[Scores, Any, None], optimum_path
     MoleculeSegmentPath]:
     molecules: Dict[int, MoleculeSegmentPath] = dict()
     for score in scores:
-        segments: List[Tuple[int, bytes]] = [(int(score.segment_matches[i][0]), score.segments[i]) if i in score.segment_matches else (-1, score.segments[i]) for i in score.segment_matches]
+        segments: List[Tuple[int, bytes, int]] = [(int(score.segment_matches[i][0]), score.segments[i], score.chromosome_id) if i in score.segment_matches else (-1, score.segments[i]) for i in score.segment_matches]
         if abs(score.molecule_id) not in molecules:
             if score.molecule_id > 0:
                 molecules[abs(score.molecule_id)] = MoleculeSegmentPath(abs(score.molecule_id),
@@ -374,6 +374,7 @@ class MoleculesOnChromosomes:
     counts_per_segment: Dict[int, Tuple[np.ndarray, np.ndarray]]
     molecules_per_segment: Dict[int, List[List[int]]]
     distance_thr: float
+    segments_per_segment: Dict[int, List[np.ndarray]]
 
     @classmethod
     def from_molecules_and_chromosomes(cls,
@@ -387,19 +388,21 @@ class MoleculesOnChromosomes:
         molecule_segment_paths: List[MoleculeSegmentPath] = segment_paths_from_scores(scores, optimum_path=optimum_path)
         chromosomes_dict: Dict[int, ChromosomeSeg] = {chromosome.index: chromosome for chromosome in chromosomes}
         molecules_per_segment: Dict[int, List[int]] = {x: list() for x in chromosomes_dict.keys()}
+        segments_per_segment: Dict[int, List[np.ndarray]] = {x: list() for x in chromosomes_dict.keys()}
         molecule_ids_per_segment: Dict[int, List[List[int]]] = {
             x: [list() for _ in range(chromosomes_dict[x].total_segment_count)] for x in chromosomes_dict.keys()}
         for molecule_segment_path in molecule_segment_paths:
             for chromosome_id in chromosomes_dict.keys():
                 all_segments = molecule_segment_path.forward_paths[chromosome_id] + \
                                molecule_segment_path.reverse_paths[chromosome_id]
+
                 molecules_per_segment[chromosome_id] += all_segments
                 for segment in np.unique(all_segments):
                     molecule_ids_per_segment[chromosome_id][segment].append(molecule_segment_path.molecule_id)
         counts_per_segment: Dict[int, Tuple[np.ndarray, np.ndarray]] = {k: np.unique(v, return_counts=True) for (k, v)
                                                                         in molecules_per_segment.items()}
         return cls({x.molecule_id: x for x in molecule_segment_paths},
-                   chromosomes_dict, counts_per_segment, molecule_ids_per_segment, distance_thr=distance_thr)
+                   chromosomes_dict, counts_per_segment, molecule_ids_per_segment, distance_thr, {})
 
     def signal_from_chromosome(self, chromosome_id: int) -> np.ndarray:
         chromosome: ChromosomeSeg = self.chromosomes[chromosome_id]
