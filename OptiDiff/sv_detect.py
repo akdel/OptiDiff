@@ -317,10 +317,7 @@ class MoleculeSegmentPath:
 
     def unpack_segment(self, segment_id, nbits=64):
         i, b, _, forward = self.segments[segment_id]
-        if forward:
-            return np.unpackbits(np.array([b], dtype=f"|S{nbits // 8}").view("uint8"))
-        else:
-            return np.unpackbits(np.array([b], dtype=f"|S{nbits // 8}").view("uint8"))[::-1]
+        return np.unpackbits(np.array([b], dtype=f"|S{nbits // 8}").view("uint8"))
 
 
 def segment_paths_from_scores(scores: Generator[Scores, Any, None], optimum_path: bool = False) -> List[
