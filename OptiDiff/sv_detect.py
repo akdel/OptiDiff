@@ -221,6 +221,12 @@ class ChromosomeSeg:
     def total_segment_count(self):
         return self.kb_indices.shape[0]
 
+    def expose_segments(self) -> np.ndarray:
+        exposed = np.zeros(self.kb_indices.shape[0], dtype=f"|S{self.nbits//8}")
+        for b in self.compressed_segment_graph:
+            exposed[self.compressed_segment_graph[b]] = b
+        return exposed
+
 
 @dataclass
 class Scores:
@@ -324,7 +330,8 @@ def segment_paths_from_scores(scores: Generator[Scores, Any, None], optimum_path
     MoleculeSegmentPath]:
     molecules: Dict[int, MoleculeSegmentPath] = dict()
     for score in scores:
-        segments: List[Tuple[int, bytes, int, bool]] = [(int(score.segment_matches[i][0]), score.segments[i], score.chromosome_id, score.molecule_id > 0) if i in score.segment_matches else (-1, score.segments[i]) for i in score.segment_matches]
+        segments: List[Tuple[int, bytes, int, bool]] = [(int(score.segment_matches[i][0]), score.segments[i],
+                                                         score.chromosome_id, score.molecule_id > 0) if i in score.segment_matches else (-1, score.segments[i]) for i in score.segment_matches]
         if abs(score.molecule_id) not in molecules:
             if score.molecule_id > 0:
                 molecules[abs(score.molecule_id)] = MoleculeSegmentPath(abs(score.molecule_id),
