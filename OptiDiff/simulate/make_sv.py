@@ -7,6 +7,25 @@ from typing import List, Tuple, Dict, Generator, Any, Iterator
 import itertools
 
 
+def generate_bnx_arrays(bnx_filename: str) -> Iterator[dict]:
+    lines: List[str] = list()
+    for k, g in itertools.groupby((x for x in open(bnx_filename, "r")), lambda x: x.split("\t")[0]):
+        if k.startswith("#"):
+            continue
+        else:
+            if len(lines) == 4:
+                yield {
+                    "info": [x.strip() for x in lines[0].split("\t")],
+                    "labels": [float(x) for x in lines[1].split()[1:]],
+                    "label_snr": [float(x) for x in lines[2].split()[1:]],
+                    "raw_intensities": [float(x) for x in lines[3].split()[1:]],
+                    "signal": None
+                }
+                lines: List[str] = [list(g)[0]]
+            else:
+                lines.append(list(g)[0])
+
+
 def fasta_to_cmap_indices(out_file: str, fasta_file: str, digestion_motif: str = "GCTCTTC", channel_id: int = 1):
     def seq_to_cmap_indices(sequence: List[str], digestion_motif: str = "GCTCTTC"):
         for i in range(len(sequence) - len(digestion_motif) + 1):
