@@ -61,7 +61,7 @@ def fasta_to_cmap_indices(out_file: str, fasta_file: str, digestion_motif: str =
                 of.write(
                     f"{_id}\t{last_index}\t{len(digestion_indices)}\t{i + 1}\t{channel_id}\t{digestion_indices[i]}\t1.0\t1\t1\n"
                 )
-            of.write(f"{_id}\t{last_index}\t{len(digestion_indices)}\t{len(digestion_indices) + 1}\t{0}\t{digestion_indices[i]}\t1.0\t1\t1\n")
+            of.write(f"{_id}\t{last_index}\t{len(digestion_indices)}\t{len(digestion_indices) + 1}\t{0}\t{last_index}\t1.0\t1\t1\n")
         else:
             _id += 1
     of.close()
