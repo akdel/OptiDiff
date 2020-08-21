@@ -9,6 +9,7 @@ import numba as nb
 from scipy import stats, signal
 import itertools
 import random
+import fire
 
 BNX_HEAD = "/home/biridir/PycharmProjects/OptiScan/bnx_head.txt"
 
@@ -599,6 +600,12 @@ class Translocation:
     inserted_region: Tuple[int, int, int]
     score: float
 
+    @property
+    def line(self):
+        chrid, _, origin_start, origin_end = self.origin
+        target_chrid, target_start, target_end = self.inserted_region
+        return f"{str(Translocation)}\t{chrid}\t{origin_start}\t{origin_end}\t{target_chrid}\t{target_start}\t{target_end}\n"
+
 
 @dataclass
 class Duplication:
@@ -606,6 +613,11 @@ class Duplication:
     t_score: float
     p_value: float
 
+    @property
+    def line(self):
+        chrid, _, origin_start, origin_end = self.translocation.origin
+        target_chrid, target_start, target_end = self.translocation.inserted_region
+        return f"{str(Duplication)}\t{chrid}\t{origin_start}\t{origin_end}\t{target_chrid}\t{target_start}\t{target_end}\n"
 
 @dataclass
 class Inversion:
@@ -619,6 +631,17 @@ class Inversion:
             return self.based_on.translocation.inserted_region
         else:
             return self.based_on.region
+
+    @property
+    def line(self):
+        target_chrid, _, target_start, target_end = self.region
+        if type(self.based_on) == Duplication:
+            chrid, _, origin_start, origin_end = self.based_on.translocation.origin
+        elif type(self.based_on) == Translocation:
+            chrid, _, origin_start, origin_end = self.based_on.origin
+        else:
+            chrid, _, origin_start, origin_end = self.region
+        return f"{str(type(self.based_on))}and{str(Inversion)}\t{chrid}\t{origin_start}\t{origin_end}\t{target_chrid}\t{target_start}\t{target_end}\n"
 
 
 def check_translocation_or_inversion(unspecific_sv: UnspecificSV,
@@ -778,11 +801,23 @@ class SmallDeletionOrInsertion:
     score: float
     potential_deletion_size: float
 
+    @property
+    def line(self):
+        chrid, _, origin_start, origin_end = self.region
+        target_chrid, target_start, target_end = "N/A", "N/A", "N/A"
+        return f"{str(SmallDeletionOrInsertion)}\t{chrid}\t{origin_start}\t{origin_end}\t{target_chrid}\t{target_start}\t{target_end}\n"
+
 
 @dataclass
 class Deletion:
     region: Tuple[int, int, int, int]
     size: float
+
+    @property
+    def line(self):
+        chrid, _, origin_start, origin_end = self.region
+        target_chrid, target_start, target_end = "N/A", "N/A", "N/A"
+        return f"{str(Deletion)}\t{chrid}\t{origin_start}\t{origin_end}\t{target_chrid}\t{target_start}\t{target_end}\n"
 
 
 def check_deletion(unspecific_sv: UnspecificSV, chromosome: ChromosomeSeg) -> [SmallDeletionOrInsertion, Deletion]:
@@ -872,6 +907,10 @@ class SvResult:
     subsampled_sample_bnx_file: str
     subsampled_reference_bnx_file: str
 
+    @property
+    def line(self):
+        return self.SV.line
+
 
 def detect_structural_variation_for_multiple_datasets(cmap_reference_file: str,
                                                       reference_bnx_file: str,
@@ -898,6 +937,7 @@ def detect_structural_variation_for_multiple_datasets(cmap_reference_file: str,
         )
     svs_found: List[SvResult] = list()
     for sv_candidate_bnx_file in sv_candidate_bnx_files:
+        output_file = open(sv_candidate_bnx_file + ".SV_results.tsv", "w")
         sv_candidate_molecules_on_chromosomes: MoleculesOnChromosomes = \
             filter_and_prepare_molecules_on_chromosomes(
                 cmap_reference_file,
@@ -927,6 +967,8 @@ def detect_structural_variation_for_multiple_datasets(cmap_reference_file: str,
                         subsampled_reference_bnx_file=f"{reference_bnx_file}.{reference_subsample_ratio}"
                     )
                 )
+                output_file.write(svs_found[-1].line)
+        output_file.close()
     return svs_found
 
 

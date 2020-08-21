@@ -1,0 +1,5 @@
+from OptiDiff.sv_detect import detect_structural_variation_for_multiple_datasets
+import fire
+
+if __name__ == "__main__":
+    fire.Fire(detect_structural_variation_for_multiple_datasets)
