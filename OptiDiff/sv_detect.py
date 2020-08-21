@@ -11,7 +11,7 @@ import itertools
 import random
 import fire
 
-BNX_HEAD = "/home/biridir/PycharmProjects/OptiScan/bnx_head.txt"
+BNX_HEAD = "bnx_head.txt"
 
 @nb.njit
 def countSetBits(n):
