@@ -6,5 +6,6 @@ setup(name='OptiDiff',
       author='Mehmet Akdel',
       author_email='mehmet.akdel@wur.nl',
       url='https://gitlab.com/akdel/',
+      scripts=["bin/OptiDiff"],
       packages=['OptiDiff'],
       install_requires=["scipy", "numba", "intervaltree", "matplotlib", "fire"])

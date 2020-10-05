@@ -1000,6 +1000,5 @@ def get_array_dict(bnx_obj: utils.BnxParser):
     return {int(x["info"][1]): x for x in bnx_obj.bnx_arrays}
 
 
-
 if __name__ == "__main__":
     pass
