@@ -501,9 +501,9 @@ def find_unspecific_sv_sites(reference: MoleculesOnChromosomes,
         assert (chr_id in reference.counts_per_segment) and (chr_id in sv_candidate.counts_per_segment)
         sig = reference.signal_from_chromosome(chr_id) / sv_candidate.signal_from_chromosome(chr_id)
         peak_indices = utils.get_peaks(sig, z_thr, np.median(sig))
-        plt.plot(sig)
-        plt.scatter((peak_indices), sig[np.array(peak_indices).astype(int)], c="red")
-        plt.show()
+        # plt.plot(sig)
+        # plt.scatter((peak_indices), sig[np.array(peak_indices).astype(int)], c="red")
+        # plt.show()
         for start, end, score in list({find_boundaries(sig, x) for x in peak_indices}):
             print(start, end, score)
             reference_molecules_left, reference_molecules_right, \
@@ -670,9 +670,9 @@ def check_translocation_or_inversion(unspecific_sv: UnspecificSV,
         translocation_ratio_right = get_translocation_ratio_signal(unspecific_sv.reference_molecules_right,
                                                                    unspecific_sv.sv_candidate_molecules_right,
                                                                    chromosome, unspecific_sv.original_match_threshold)
-    plt.plot(translocation_ratio_left)
-    plt.plot(translocation_ratio_right)
-    plt.show()
+    # plt.plot(translocation_ratio_left)
+    # plt.plot(translocation_ratio_right)
+    # plt.show()
     peak_indices_left = utils.get_peaks(translocation_ratio_left, thr, max(1, np.median(translocation_ratio_left)))
     peak_indices_right = utils.get_peaks(translocation_ratio_right, thr, max(1, np.median(translocation_ratio_right)))
     if len(peak_indices_left) and len(peak_indices_right):
