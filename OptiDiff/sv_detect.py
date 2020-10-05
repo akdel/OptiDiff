@@ -1,5 +1,5 @@
 from OptiScan import utils
-from typing import List, Tuple, Dict, Generator, Any, Iterator
+from typing import List, Tuple, Dict, Generator, Any, Iterator, Union
 import numpy as np
 from scipy import ndimage
 import matplotlib.pyplot as plt
@@ -914,7 +914,7 @@ class SvResult:
 
 def detect_structural_variation_for_multiple_datasets(cmap_reference_file: str,
                                                       reference_bnx_file: str,
-                                                      sv_candidate_bnx_files: List[str],
+                                                      sv_candidate_bnx_files: Union[List[str], str],
                                                       sv_subsample_ratio: float = 1.0,
                                                       reference_subsample_ratio: float = 1.0,
                                                       nbits: int = 64, segment_length: int = 275,
@@ -936,6 +936,13 @@ def detect_structural_variation_for_multiple_datasets(cmap_reference_file: str,
             density_filter=density_filter
         )
     svs_found: List[SvResult] = list()
+    if type(sv_candidate_bnx_files) == str:
+        if "," not in sv_candidate_bnx_files:
+            sv_candidate_bnx_files = [sv_candidate_bnx_files]
+        else:
+            sv_candidate_bnx_files = sv_candidate_bnx_files.split(",")
+    else:
+        pass
     for sv_candidate_bnx_file in sv_candidate_bnx_files:
         output_file = open(sv_candidate_bnx_file + ".SV_results.tsv", "w")
         sv_candidate_molecules_on_chromosomes: MoleculesOnChromosomes = \
