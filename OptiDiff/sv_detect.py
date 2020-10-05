@@ -13,6 +13,7 @@ import fire
 
 BNX_HEAD = "bnx_head.txt"
 
+
 @nb.njit
 def countSetBits(n):
     count = 0
@@ -58,7 +59,8 @@ class MoleculeSeg:
                       nbits: int = 64, lower_bound: int = 3, snr: float = 3.5):
         index: int = int(bnx_array_entry["info"][1])
         length: float = float(bnx_array_entry["info"][2])
-        labels: np.ndarray = (np.array(bnx_array_entry["labels"][:-1]) / zoom_factor).astype(int)[np.array(bnx_array_entry["label_snr"]) >= snr]
+        labels: np.ndarray = (np.array(bnx_array_entry["labels"][:-1]) / zoom_factor).astype(int)[
+            np.array(bnx_array_entry["label_snr"]) >= snr]
         sig: np.ndarray = np.zeros(int(length) // zoom_factor + 1)
         sig[labels] = 5000.
         log_sig: np.ndarray = np.log1p(ndimage.gaussian_filter1d(sig, sigma=1))
@@ -86,7 +88,8 @@ class MoleculeSeg:
         self.compressed_segments: np.ndarray = lsh.VectorsInLSH(self.nbits,
                                                                 self.segments,
                                                                 custom_table=randoms).search_results[filtered_values]
-        self.segments = self.segments[filtered_values]# = b'\xff' * (self.nbits//8) # This gives the maximum value for that many bytes
+        self.segments = self.segments[
+            filtered_values]  # = b'\xff' * (self.nbits//8) # This gives the maximum value for that many bytes
         self.label_densities = list(np.array(self.label_densities)[filtered_values])
 
 
@@ -195,7 +198,8 @@ class ChromosomeSeg:
             start, end = cmap_signals.chromosome_segment_indices[
                 list(cmap_signals.position_index.keys()).index(chromosome_id)]
             compressed_segments: np.ndarray = cmap_signals.chromosome_lsh.search_results[start:end]
-            kb_segment_indices: np.ndarray = cmap_signals.position_index[chromosome_id] / 2 # TODO: do this using zoom factor
+            kb_segment_indices: np.ndarray = cmap_signals.position_index[
+                                                 chromosome_id] / 2  # TODO: do this using zoom factor
             segment_graph: Dict[bytes, List[int]] = dict()
             label_densities: Dict[bytes, int] = dict()
             for i, segment in enumerate(compressed_segments):
@@ -211,7 +215,6 @@ class ChromosomeSeg:
                     segment_graph[segment].append(i)
         else:
             raise BrokenPipeError("Cmap signals not prepared")
-        print(cmap_signals.chromosome_lsh.search_results.shape)
         return cls(chromosome_id, kb_segment_indices[-1] * 1000,
                    np.array(list(label_densities.values())),
                    kb_segment_indices, cmap_signals.zoom_factor, cmap_signals.segment_length, segment_graph,
@@ -223,7 +226,7 @@ class ChromosomeSeg:
         return self.kb_indices.shape[0]
 
     def expose_segments(self) -> np.ndarray:
-        exposed = np.zeros(self.kb_indices.shape[0], dtype=f"|S{self.nbits//8}")
+        exposed = np.zeros(self.kb_indices.shape[0], dtype=f"|S{self.nbits // 8}")
         for b in self.compressed_segment_graph:
             exposed[self.compressed_segment_graph[b]] = b
         return exposed
@@ -235,10 +238,11 @@ class Scores:
     chromosome_id: int
     segment_matches: Dict[int, np.ndarray]
     total_segments: int
-    segments: List[bytes] # numpy bytes array
+    segments: List[bytes]  # numpy bytes array
 
     @classmethod
-    def from_molecule_and_chromosome(cls, molecule: MoleculeSeg, chromosome: ChromosomeSeg, distance_thr: float = 1.8, max_distance_thr: float = 8):
+    def from_molecule_and_chromosome(cls, molecule: MoleculeSeg, chromosome: ChromosomeSeg, distance_thr: float = 1.8,
+                                     max_distance_thr: float = 8):
         assert molecule.nbits == chromosome.nbits
         assert molecule.segment_length == chromosome.segment_length
         if molecule.segments.shape[0] <= 1:
@@ -332,7 +336,9 @@ def segment_paths_from_scores(scores: Generator[Scores, Any, None], optimum_path
     molecules: Dict[int, MoleculeSegmentPath] = dict()
     for score in scores:
         segments: List[Tuple[int, bytes, int, bool]] = [(int(score.segment_matches[i][0]), score.segments[i],
-                                                         score.chromosome_id, score.molecule_id > 0) if i in score.segment_matches else (-1, score.segments[i]) for i in score.segment_matches]
+                                                         score.chromosome_id,
+                                                         score.molecule_id > 0) if i in score.segment_matches else (
+        -1, score.segments[i]) for i in score.segment_matches]
         if abs(score.molecule_id) not in molecules:
             if score.molecule_id > 0:
                 molecules[abs(score.molecule_id)] = MoleculeSegmentPath(abs(score.molecule_id),
@@ -422,7 +428,7 @@ class MoleculesOnChromosomes:
             current = np.zeros(sig.shape[0])
             for seg in mol_seg:
                 start, end = int(chromosome.kb_indices[seg]), \
-                             int(chromosome.kb_indices[seg] + (chromosome.segment_length / 2 )) # / self.distance_thr))
+                             int(chromosome.kb_indices[seg] + (chromosome.segment_length / 2))  # / self.distance_thr))
                 current[start: end] = signal.windows.gaussian(end - start, (end - start) * 0.5)
             sig += current
         sig[np.where(sig < 1)[0]] = 1
@@ -505,7 +511,7 @@ def find_unspecific_sv_sites(reference: MoleculesOnChromosomes,
         # plt.scatter((peak_indices), sig[np.array(peak_indices).astype(int)], c="red")
         # plt.show()
         for start, end, score in list({find_boundaries(sig, x) for x in peak_indices}):
-            print(start, end, score)
+            # print(start, end, score)
             reference_molecules_left, reference_molecules_right, \
             sv_molecules_left, sv_molecules_right, \
             inversions = get_molecules_in_region(chr_id, start, end, reference, sv_candidate)
@@ -618,6 +624,7 @@ class Duplication:
         chrid, _, origin_start, origin_end = self.translocation.origin
         target_chrid, target_start, target_end = self.translocation.inserted_region
         return f"{str(Duplication)}\t{chrid}\t{origin_start}\t{origin_end}\t{target_chrid}\t{target_start}\t{target_end}\n"
+
 
 @dataclass
 class Inversion:
@@ -778,6 +785,17 @@ class Inversion:
         else:
             return self.based_on.region
 
+    @property
+    def line(self):
+        target_chrid, _, target_start, target_end = self.region
+        if type(self.based_on) == Duplication:
+            chrid, _, origin_start, origin_end = self.based_on.translocation.origin
+        elif type(self.based_on) == Translocation:
+            chrid, _, origin_start, origin_end = self.based_on.origin
+        else:
+            chrid, _, origin_start, origin_end = self.region
+        return f"{str(type(self.based_on))}and{str(Inversion)}\t{chrid}\t{origin_start}\t{origin_end}\t{target_chrid}\t{target_start}\t{target_end}\n"
+
 
 def check_inversion_from_unspecific_sv(unspecific_sv: UnspecificSV, thr: float = 0.01,
                                        additional: [None, Translocation, Duplication] = None) -> [Inversion,
@@ -873,7 +891,8 @@ def filter_and_prepare_molecules_on_chromosomes(
         density_filter: int = 40) -> MoleculesOnChromosomes:
     cmap: CmapToSignal = CmapToSignal(cmap_file_location)
     cmap.prepare(segment_length=segment_length, nbits=64)
-    chromosomes: List[ChromosomeSeg] = [ChromosomeSeg.from_cmap_signals(cmap, chr_id, density_filter=density_filter) for chr_id in
+    chromosomes: List[ChromosomeSeg] = [ChromosomeSeg.from_cmap_signals(cmap, chr_id, density_filter=density_filter) for
+                                        chr_id in
                                         {int(x[0]) for x in cmap.cmap_lines if len(x)}]
     bnx_lines = get_subsampled_bnx_lines(bnx_file_location,
                                          minimum_molecule_length,
@@ -921,7 +940,7 @@ def detect_structural_variation_for_multiple_datasets(cmap_reference_file: str,
                                                       zoom_factor: int = 500,
                                                       minimum_molecule_length: int = 150_000,
                                                       distance_threshold: float = 1.7,
-                                                      unspecific_sv_threshold: float = 10.0,
+                                                      unspecific_sv_threshold: Union[float, str] = 10.0,
                                                       density_filter: int = 40) -> List[SvResult]:
     reference_molecules_on_chromosomes: MoleculesOnChromosomes = \
         filter_and_prepare_molecules_on_chromosomes(
@@ -945,6 +964,7 @@ def detect_structural_variation_for_multiple_datasets(cmap_reference_file: str,
         pass
     for sv_candidate_bnx_file in sv_candidate_bnx_files:
         output_file = open(sv_candidate_bnx_file + ".SV_results.tsv", "w")
+        output_file.write("# SV_class\tChrid\torigin_start\torigin_end\ttarget_Chrid\ttarget_start\ttarget_end\n")
         sv_candidate_molecules_on_chromosomes: MoleculesOnChromosomes = \
             filter_and_prepare_molecules_on_chromosomes(
                 cmap_reference_file,
@@ -965,7 +985,7 @@ def detect_structural_variation_for_multiple_datasets(cmap_reference_file: str,
                     SvResult(
                         find_specific_sv(unspecific_sv,
                                          reference_molecules_on_chromosomes,
-                                         sv_candidate_molecules_on_chromosomes),
+                                         sv_candidate_molecules_on_chromosomes)[0],
                         sample_bnx_file=sv_candidate_bnx_file,
                         sample_subsample=sv_subsample_ratio,
                         reference_bnx_file=reference_bnx_file,
