@@ -86,18 +86,16 @@ class Fasta(utils.FastaObject):
         start, end = self.indices[chr_id]
         header = f"> {chr_id}\n"
         fasta_text = "".join(list(self.fasta_array[0][start:end].view("S1").astype("U1"))) + "\n"
-        f = open(fname, "w")
-        f.write(header)
-        f.write(fasta_text)
-        f.close()
+        with open(fname, "w") as f:
+            f.write(header)
+            f.write(fasta_text)
 
     def write_all_chr(self,  fname="temp.fasta", lim=5000000):
         header = f"> all_chr\n"
         fasta_text = "".join(list(self.fasta_array[0].view("S1").astype("U1")))[:lim] + "\n"
-        f = open(fname, "w")
-        f.write(header)
-        f.write(fasta_text)
-        f.close()
+        with open(fname, "w") as f:
+            f.write(header)
+            f.write(fasta_text)
 
     def write_fasta_to_cmap(self, digestion_sequence: str, output_file_name: str, enzyme_name="BSP1Q", channel=1):
         """
@@ -228,19 +226,17 @@ class SvdFromFastaArray:
     def write_ref(self, fname="temp_ref.fasta"):
         header = "> ref\n"
         fasta_text = "".join(list(self.fasta_array.view("S1").astype("U1"))) + "\n"
-        f = open(fname, "w")
-        f.write(header)
-        f.write(fasta_text)
-        f.close()
+        with open(fname, "w") as f:
+            f.write(header)
+            f.write(fasta_text)
         self.omsim.run_simulation_from_fasta(fname)
 
     def write(self, fname="temp_svd.fasta"):
         header = "> svd\n"
         fasta_text = "".join(list(self.fasta_array.view("S1").astype("U1"))) + "\n"
-        f = open(fname, "w")
-        f.write(header)
-        f.write(fasta_text)
-        f.close()
+        with open(fname, "w") as f:
+            f.write(header)
+            f.write(fasta_text)
         self.omsim.run_simulation_from_fasta(fname)
 
 
@@ -258,9 +254,8 @@ class OmsimWrapper:
         template = template.replace("{file1}", fasta_path)
         template = template.replace("{file2}", self.enzymes)
         template = template.replace("{cov}", str(self.cov))
-        f = open(self.params, "w")
-        f.write(template)
-        f.close()
+        with open(self.params, "w") as f:
+            f.write(template)
         ck(f"python2 {self.exec} {self.params}", shell=True)
         ck(f"mv yeast_output.label_0.1.bnx {fasta_path}.bnx", shell=True)
 
@@ -273,12 +268,10 @@ if __name__ == "__main__":
     omsim_param_template_path = parameters["omsim_template_path"]
     omsim_enzyme_path = parameters["omsim_enzyme_path"]
 
-
-
-    fasta = Fasta("data/genomes/yeast.fasta")
+    fasta = Fasta("data/genomes/yeast.fasta") # make fasta file
     print(fasta.fasta_array.shape)
-    insertion_array = fasta.fasta_array[0][-1000000:].copy()
-    fasta.write_all_chr(fname="temp.fasta", lim=10000000) # concats chromosomes into a single fasta entry
+    # insertion_array = fasta.fasta_array[0][-1000000:].copy()
+    fasta.write_all_chr(fname="temp.fasta", lim=10_000_000) # concats chromosomes into a single fasta entry
     fasta = Fasta("temp.fasta") # reloads fasta
     print(fasta.fasta_array.shape)
     fasta.write_fasta_to_cmap(digestion_sequence="GCTCTTC", output_file_name="temp_all_chr.cmap",
@@ -300,11 +293,18 @@ if __name__ == "__main__":
     print(fasta.fasta_array.shape)
     fasta.write_fasta_to_cmap(digestion_sequence="GCTCTTC", output_file_name="yeast.cmap",
                               enzyme_name="BSPQ1", channel=1)  # writes fasta cmap and digests the sequence
-    print(fasta.fasta_array.shape)
     svd_fasta = SvdFromFastaArray(fasta.fasta_array, fasta.fasta_digestion_array, omsim_exec_path, omsim_enzyme_path,
-                                  omsim_param_template_path, cov=2000)
-    svd_fasta.write_ref(fname="yeast10mb.fasta")
-    # exit()
+                                  omsim_param_template_path, cov=3000)
+    svd_fasta.write_ref("temp.fasta")
+    print(fasta.fasta_array.shape)
+    exit()
+    for i in np.linspace(50, 1200, 30).astype(int):
+        for j in range(10):
+            svd_fasta = SvdFromFastaArray(fasta.fasta_array, fasta.fasta_digestion_array, omsim_exec_path, omsim_enzyme_path,
+                                      omsim_param_template_path, cov=i)
+            svd_fasta.introduce_deletion(100_000, 10_000)
+            svd_fasta.write_ref(fname=f"/home/biridir/PycharmProjects/optidiff/data/coverage_vs_prec/{'-'.join([str(y) for y in itertools.chain.from_iterable(svd_fasta.tracked_changes)])}_yeast_svd_{int(i/10)}x.{j}.fasta")
+    exit()
     # print(fasta.fasta_array.shape)
     # svd_fasta = SvdFromFastaArray(fasta.fasta_array, fasta.fasta_digestion_array, omsim_exec_path, omsim_enzyme_path,
     #                               omsim_param_template_path, cov=600)
@@ -320,8 +320,11 @@ if __name__ == "__main__":
     # exit()
     import itertools
     for _ in range(5):
-        svd_fasta = SvdFromFastaArray(fasta.fasta_array, fasta.fasta_digestion_array, omsim_exec_path, omsim_enzyme_path,
-                                      omsim_param_template_path, cov=1000, insertion_array=insertion_array)
+        svd_fasta = SvdFromFastaArray(fasta.fasta_array,
+                                      fasta.fasta_digestion_array,
+                                      omsim_exec_path, omsim_enzyme_path,
+                                      omsim_param_template_path,
+                                      cov=1000, insertion_array=insertion_array)
         print(svd_fasta.fasta_array.shape)
         # svd_fasta.copy_paste(length=200000, inverted=True)
         # svd_fasta.inplace_inversion(200000)

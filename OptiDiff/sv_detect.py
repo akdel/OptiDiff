@@ -653,7 +653,7 @@ class Inversion:
 
 def check_translocation_or_inversion(unspecific_sv: UnspecificSV,
                                      chromosome: ChromosomeSeg,
-                                     thr: float = 5,
+                                     thr: float = 25, # was 5 before
                                      inversion_test: [bool, Translocation, Duplication, UnspecificSV] = False) -> [
     Translocation, UnspecificSV, Inversion]:
     chromosome_id = chromosome.index
@@ -994,6 +994,7 @@ def detect_structural_variation_for_multiple_datasets(cmap_reference_file: str,
                         subsampled_reference_bnx_file=f"{reference_bnx_file}.{reference_subsample_ratio}"
                     )
                 )
+                print(svs_found[-1].line)
                 output_file.write(svs_found[-1].line)
         output_file.close()
     return svs_found
@@ -1026,6 +1027,7 @@ def molecule_generator_from_bnx_lines(bnx_lines, reverse: bool, segment_length: 
 def get_array_dict(bnx_obj: utils.BnxParser):
     return {int(x["info"][1]): x for x in bnx_obj.bnx_arrays}
 
+print(True)
 
 if __name__ == "__main__":
     pass
