@@ -848,15 +848,17 @@ def check_deletion(unspecific_sv: UnspecificSV, chromosome: ChromosomeSeg) -> [S
 
 def find_specific_sv(unspecific_sv: UnspecificSV,
                      reference: MoleculesOnChromosomes,
-                     candidate: MoleculesOnChromosomes) -> List[Any]:
+                     candidate: MoleculesOnChromosomes,
+                     translocation_thr: float = 10) -> List[Any]:
     chromosomes = reference.chromosomes
     first_chr_id = list(reference.chromosomes.keys())[0]
     svs = list()
     for chr_id in chromosomes:
-        current_sv = check_translocation_or_inversion(unspecific_sv, chromosomes[chr_id])
+        current_sv = check_translocation_or_inversion(unspecific_sv, chromosomes[chr_id], thr=translocation_thr)
         if type(current_sv) == Translocation:
             current_sv = check_duplication(current_sv, reference, candidate)
-        inversion = check_translocation_or_inversion(unspecific_sv, chromosomes[chr_id], inversion_test=current_sv)
+        inversion = check_translocation_or_inversion(unspecific_sv, chromosomes[chr_id],
+                                                     inversion_test=current_sv)
         if type(inversion) == Inversion:
             current_sv = inversion
         if type(current_sv) != UnspecificSV:
@@ -941,7 +943,8 @@ def detect_structural_variation_for_multiple_datasets(cmap_reference_file: str,
                                                       minimum_molecule_length: int = 150_000,
                                                       distance_threshold: float = 1.7,
                                                       unspecific_sv_threshold: Union[float, str] = 10.0,
-                                                      density_filter: int = 40) -> List[SvResult]:
+                                                      density_filter: int = 40,
+                                                      translocation_threshold: int = 10) -> List[SvResult]:
     reference_molecules_on_chromosomes: MoleculesOnChromosomes = \
         filter_and_prepare_molecules_on_chromosomes(
             cmap_reference_file,
@@ -963,7 +966,7 @@ def detect_structural_variation_for_multiple_datasets(cmap_reference_file: str,
     else:
         pass
     for sv_candidate_bnx_file in sv_candidate_bnx_files:
-        output_file = open(sv_candidate_bnx_file + ".SV_results.tsv", "w")
+        output_file = open(sv_candidate_bnx_file + f"_{sv_subsample_ratio}_SV_results.tsv", "w")
         output_file.write("# SV_class\tChrid\torigin_start\torigin_end\ttarget_Chrid\ttarget_start\ttarget_end\n")
         sv_candidate_molecules_on_chromosomes: MoleculesOnChromosomes = \
             filter_and_prepare_molecules_on_chromosomes(
@@ -985,7 +988,8 @@ def detect_structural_variation_for_multiple_datasets(cmap_reference_file: str,
                     SvResult(
                         find_specific_sv(unspecific_sv,
                                          reference_molecules_on_chromosomes,
-                                         sv_candidate_molecules_on_chromosomes)[0],
+                                         sv_candidate_molecules_on_chromosomes,
+                                         translocation_thr=translocation_threshold)[0],
                         sample_bnx_file=sv_candidate_bnx_file,
                         sample_subsample=sv_subsample_ratio,
                         reference_bnx_file=reference_bnx_file,

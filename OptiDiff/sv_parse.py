@@ -130,15 +130,13 @@ class ResultsForRun:
         return len([x for x in compared if x is True]) / len(compared)
 
 
-Coverage: int
-
+Coverage = int
 
 @dataclass
 class SVDetectionParameters:
     cmap_reference_file: str
     reference_bnx_file: str
-    sv_candidate_bnx_files: ty.Union[ty.List[str], str]
-    sv_subsample_ratio: float = 1.0
+    subsample_range: ty.Tuple[float, float, int] = (0.1, 1., 3)
     reference_subsample_ratio: float = 1.0
     nbits: int = 64
     segment_length: int = 275
@@ -147,6 +145,7 @@ class SVDetectionParameters:
     distance_threshold: float = 1.7
     unspecific_sv_threshold: ty.Union[float, str] = 10.0
     density_filter: int = 40
+    translocation_threshold: int = 10
 
 
 @dataclass
@@ -159,29 +158,31 @@ class Performance:
     @classmethod
     def from_folder(cls, path: str, ground_truth_function: ty.Callable,
                     tsv_parser_function: ty.Callable,
-                    with_run: ty.Union[None, SVDetectionParameters]) -> "Performance":
-        # ground_truth_function should return ResultsForRun
-        # tsv_parser_function should return ResultsForRun
+                    with_run: ty.Union[None, SVDetectionParameters] = None) -> "Performance":
         bnx_files = glob.glob(path + "*.bnx")
         ground_truth = [ground_truth_function(x) for x in bnx_files]
         ground_truth = {result.filename: result for result in ground_truth}
+
         if with_run is not None:
+            start, end, step = with_run.subsample_range
             from OptiDiff.sv_detect import detect_structural_variation_for_multiple_datasets
-            _ = detect_structural_variation_for_multiple_datasets(cmap_reference_file=with_run.cmap_reference_file,
-                                                                  reference_bnx_file=with_run.reference_bnx_file,
-                                                                  sv_candidate_bnx_files=with_run.sv_candidate_bnx_files,
-                                                                  sv_subsample_ratio=with_run.sv_subsample_ratio,
-                                                                  reference_subsample_ratio=with_run.reference_subsample_ratio,
-                                                                  nbits=with_run.nbits,
-                                                                  segment_length=with_run.segment_length,
-                                                                  zoom_factor=with_run.zoom_factor,
-                                                                  minimum_molecule_length=with_run.minimum_molecule_length,
-                                                                  distance_threshold=with_run.distance_threshold,
-                                                                  unspecific_sv_threshold=with_run.unspecific_sv_threshold,
-                                                                  density_filter=with_run.density_filter)
+            for i in np.linspace(start, end, step):
+                _ = detect_structural_variation_for_multiple_datasets(cmap_reference_file=with_run.cmap_reference_file,
+                                                                      reference_bnx_file=with_run.reference_bnx_file,
+                                                                      sv_candidate_bnx_files=bnx_files,
+                                                                      sv_subsample_ratio=i,
+                                                                      reference_subsample_ratio=with_run.reference_subsample_ratio,
+                                                                      nbits=with_run.nbits,
+                                                                      segment_length=with_run.segment_length,
+                                                                      zoom_factor=with_run.zoom_factor,
+                                                                      minimum_molecule_length=with_run.minimum_molecule_length,
+                                                                      distance_threshold=with_run.distance_threshold,
+                                                                      unspecific_sv_threshold=with_run.unspecific_sv_threshold,
+                                                                      density_filter=with_run.density_filter,
+                                                                      translocation_threshold=with_run.translocation_threshold)
         detected = [tsv_parser_function(x) for x in glob.glob(path + "*.tsv")]
         detected = {results.filename: results for results in detected}
-        coverages = {results.coverage for results in detected}
+        coverages = {results.coverage for results in detected.values()}
         return cls(bnx_files, ground_truth, detected, coverages)
 
     def correct_detections(self):
@@ -196,13 +197,32 @@ class Performance:
 
 
 def tsv_filename_to_result(filename: str) -> ResultsForRun:
-    filename = filename.split("/")[-1]
-    fields = filename.split(".")
-    results: ty.List[Result]
-    coverage: int
-    original_bnx_filename: str
+
+    # tsv filename -> 5949562-104552-del_120x.fasta.bnx_0.1_SV_results.tsv
+    path = "/".join(filename.split("/")[:-1])
+    tsv = filename.split("/")[-1]
+    left = filename.split(".")[0]
+    coverage: int = int(float(filename.split("_")[4]) * 120)
+    bnx_name = f"{path}/{left}.fasta.bnx"
+    results: ResultsForRun = ResultsForRun.from_result_file(filename, coverage)
+    results.filename = bnx_name
+    return results
 
 
 def bnx_deletion_filename_to_result(filename: str) -> ResultsForRun:
-    result: ty.List[Result]
-    coverage: int
+    start, end, _ = filename.split("/")[-1].split("-")
+    sv_type: SVType = SVType.Deletion
+    chr_id: int = 1
+    origin_start: float = int(start)/1000
+    origin_end: float = int(end)/1000
+    target_chrid = None
+    target_start = None
+    target_end = None
+    results: ty.List[Result] = [Result(sv_type,
+                                      chr_id,
+                                      int(origin_start), int(origin_end),
+                                      target_chrid,
+                                      target_start, target_end)]
+    coverage: int = 120
+    return ResultsForRun(results, filename, coverage)
+
