@@ -107,14 +107,15 @@ class Result:
 class ResultsForRun:
     results: ty.List[Result]
     filename: str
+    coverage: int
 
     @classmethod
-    def from_result_file(cls, filename: str) -> "ResultsForRun":
+    def from_result_file(cls, filename: str, coverage: int) -> "ResultsForRun":
         results: ty.List[Result] = list()
         for line in iter(open(filename, "r")):
             if not line.startswith("#"):
                 results.append(Result.from_result_line(line))
-        return cls(results, filename)
+        return cls(results, filename, coverage)
 
     def compare_to(self, other: "ResultsForRun") -> ty.List[bool]:
         comparisons: ty.List[bool] = [False for _ in range(len(self.results))]
@@ -153,17 +154,17 @@ class Performance:
     simulated_filenames: ty.Dict[Coverage, str]
     ground_truth: ty.Dict[Coverage, ty.List[ResultsForRun]]
     detected: ty.Dict[Coverage, ty.List[ResultsForRun]]
+    coverages: ty.Set[int]
 
     @classmethod
     def from_folder(cls, path: str, ground_truth_function: ty.Callable,
                     tsv_parser_function: ty.Callable,
                     with_run: ty.Union[None, SVDetectionParameters]) -> "Performance":
-        # ground_truth_function should return coverage, Result
-        # tsv_parser_function should return coverage, ResultsForRun
-        bnx_files = glob.glob("*bnx")
+        # ground_truth_function should return ResultsForRun
+        # tsv_parser_function should return ResultsForRun
+        bnx_files = glob.glob(path + "*.bnx")
         ground_truth = [ground_truth_function(x) for x in bnx_files]
-        ground_truth = {coverage: ResultsForRun([result], bnx_files[i]) for i, (coverage, result) in
-                        enumerate(ground_truth)}
+        ground_truth = {result.filename: result for result in ground_truth}
         if with_run is not None:
             from OptiDiff.sv_detect import detect_structural_variation_for_multiple_datasets
             _ = detect_structural_variation_for_multiple_datasets(cmap_reference_file=with_run.cmap_reference_file,
@@ -178,6 +179,30 @@ class Performance:
                                                                   distance_threshold=with_run.distance_threshold,
                                                                   unspecific_sv_threshold=with_run.unspecific_sv_threshold,
                                                                   density_filter=with_run.density_filter)
-        detected = [tsv_parser_function(x) for x in glob.glob("*tsv")]
-        detected = {coverage: results for (coverage, results) in detected}
-        return cls(bnx_files, ground_truth, detected)
+        detected = [tsv_parser_function(x) for x in glob.glob(path + "*.tsv")]
+        detected = {results.filename: results for results in detected}
+        coverages = {results.coverage for results in detected}
+        return cls(bnx_files, ground_truth, detected, coverages)
+
+    def correct_detections(self):
+        pass
+
+    def correct_classification(self):
+        pass
+
+    def incorrect_classification(self):
+        # False positive categories
+        pass
+
+
+def tsv_filename_to_result(filename: str) -> ResultsForRun:
+    filename = filename.split("/")[-1]
+    fields = filename.split(".")
+    results: ty.List[Result]
+    coverage: int
+    original_bnx_filename: str
+
+
+def bnx_deletion_filename_to_result(filename: str) -> ResultsForRun:
+    result: ty.List[Result]
+    coverage: int
