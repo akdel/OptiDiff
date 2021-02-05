@@ -69,35 +69,44 @@ class Result:
                    target_start,
                    target_end)
 
-    def equal_to(self, other: "Result", intersection_tolerance: int = 10) -> bool:
-        def check_intersection(first_line: ty.Tuple[ty.Union[int, None], ty.Union[int, None]],
-                               second_line: ty.Tuple[ty.Union[int, None], ty.Union[int, None]],
-                               tolerance: int = intersection_tolerance) -> bool:
-            p11, p12 = first_line
-            p21, p22 = second_line
-            if (p11 is None) or (p12 is None) or (p21 is None) or (p22 is None):
-                return False
-            if (p21 - tolerance) < p11 < (p22 + tolerance):
-                return True
-            elif (p21 - tolerance) < p12 < (p22 + tolerance):
-                return True
-            elif (p11 - tolerance) < p21 < (p12 + tolerance):
-                return True
-            elif (p11 - tolerance) < p22 < (p12 + tolerance):
-                return True
-            else:
-                return False
+    def check_intersection(self,
+                           first_line: ty.Tuple[ty.Union[int, None], ty.Union[int, None]],
+                           second_line: ty.Tuple[ty.Union[int, None], ty.Union[int, None]],
+                           tolerance: int = 10) -> bool:
+        p11, p12 = first_line
+        p21, p22 = second_line
+        if (p11 is None) or (p12 is None) or (p21 is None) or (p22 is None):
+            return False
+        if (p21 - tolerance) < p11 < (p22 + tolerance):
+            return True
+        elif (p21 - tolerance) < p12 < (p22 + tolerance):
+            return True
+        elif (p11 - tolerance) < p21 < (p12 + tolerance):
+            return True
+        elif (p11 - tolerance) < p22 < (p12 + tolerance):
+            return True
+        else:
+            return False
 
+    def equal_to(self, other: "Result", intersection_tolerance: int = 10) -> bool:
         if self.sv_type != other.sv_type:
             return False
-        elif check_intersection((self.target_start, self.target_end),
-                                (other.target_start, other.target_end)):
+        else:
+            return self.overlaps_with(other,
+                                      intersection_tolerance=intersection_tolerance)
+
+    def overlaps_with(self, other: "Result", intersection_tolerance: int = 10) -> bool:
+        if self.check_intersection((self.target_start, self.target_end),
+                                   (other.target_start, other.target_end),
+                                   tolerance=intersection_tolerance):
             return True
-        elif check_intersection((self.target_start, self.target_end),
-                                (other.origin_start, other.origin_end)):
+        elif self.check_intersection((self.target_start, self.target_end),
+                                     (other.origin_start, other.origin_end),
+                                     tolerance=intersection_tolerance):
             return True
-        elif check_intersection((self.origin_start, self.origin_end),
-                                (other.origin_start, other.origin_end)):
+        elif self.check_intersection((self.origin_start, self.origin_end),
+                                     (other.origin_start, other.origin_end),
+                                     tolerance=intersection_tolerance):
             return True
         else:
             return False
@@ -132,6 +141,7 @@ class ResultsForRun:
 
 Coverage = int
 
+
 @dataclass
 class SVDetectionParameters:
     cmap_reference_file: str
@@ -151,8 +161,8 @@ class SVDetectionParameters:
 @dataclass
 class Performance:
     simulated_filenames: ty.Dict[Coverage, str]
-    ground_truth: ty.Dict[Coverage, ty.List[ResultsForRun]]
-    detected: ty.Dict[Coverage, ty.List[ResultsForRun]]
+    ground_truth: ty.Dict[str, ResultsForRun]
+    detected: ty.Dict[Coverage, ty.Dict[str, ResultsForRun]]
     coverages: ty.Set[int]
 
     @classmethod
@@ -180,49 +190,146 @@ class Performance:
                                                                       unspecific_sv_threshold=with_run.unspecific_sv_threshold,
                                                                       density_filter=with_run.density_filter,
                                                                       translocation_threshold=with_run.translocation_threshold)
-        detected = [tsv_parser_function(x) for x in glob.glob(path + "*.tsv")]
-        detected = {results.filename: results for results in detected}
-        coverages = {results.coverage for results in detected.values()}
-        return cls(bnx_files, ground_truth, detected, coverages)
+        detected: ty.Dict[Coverage, ty.Dict[str, ResultsForRun]] = dict()
+        used_coverages: ty.Set[int] = set()
+        for x in glob.glob(path + "*.tsv"):
+            current_detected = tsv_parser_function(x)
+            if current_detected.coverage not in detected:
+                detected[current_detected.coverage] = {}
+            detected[current_detected.coverage][current_detected.filename] = current_detected
+            used_coverages.add(current_detected.coverage)
+        return cls(bnx_files, ground_truth, detected, used_coverages)
 
-    def correct_detections(self):
-        pass
+    def correct_detections(self, coverage: int):
+        tp_detections: ty.Dict[str, ty.Tuple[ty.List[bool], "Performance.SVTypeCounts"]] = dict()
+        for bnx_file, results in self.detected[coverage].items():
 
-    def correct_classification(self):
-        pass
+            results: ResultsForRun
+            bnx_file: str
+            tp_detections[bnx_file] = ([], self.SVTypeCounts())
+            truth: ResultsForRun = self.ground_truth[bnx_file]
+            for result in results.results:
+                if truth.results[0].overlaps_with(result):
+                    tp_detections[bnx_file][0].append(True)
+                else:
+                    tp_detections[bnx_file][0].append(False)
+                    tp_detections[bnx_file][1].add_sv(result.sv_type)
+        return tp_detections
 
-    def incorrect_classification(self):
-        # False positive categories
-        pass
+    def correct_classifications(self, coverage: int):
+        tp_classifications: ty.Dict[str, ty.Tuple[ty.List[bool], "Performance.SVTypeCounts"]] = dict()
+        for bnx_file, results in self.detected[coverage].items():
+            results: ResultsForRun
+            bnx_file: str
+            tp_classifications[bnx_file] = ([], self.SVTypeCounts())
+            truth: ResultsForRun = self.ground_truth[bnx_file]
+            for result in results.results:
+                if truth.results[0].equal_to(result):
+                    tp_classifications[bnx_file][0].append(True)
+                else:
+                    tp_classifications[bnx_file][0].append(False)
+                    tp_classifications[bnx_file][1].add_sv(result.sv_type)
+        return tp_classifications
+
+    @dataclass
+    class SVTypeCounts:
+        deletion: int = 0
+        insertion_or_small_deletion: int = 0
+        translocation: int = 0
+        duplication: int = 0
+        inplace_inversion: int = 0
+        inverted_translocation: int = 0
+        inverted_duplication: int = 0
+
+        def add_sv(self, sv_type: SVType) -> None:
+            if sv_type == SVType.Deletion:
+                self.deletion += 1
+            elif sv_type == SVType.Translocation:
+                self.translocation += 1
+            elif sv_type == SVType.Duplication:
+                self.duplication += 1
+            elif sv_type == SVType.InsertionOrDeletion:
+                self.insertion_or_small_deletion += 1
+            elif sv_type == SVType.InplaceInversion:
+                self.inplace_inversion += 1
+            elif sv_type == SVType.InvertedDuplication:
+                self.inverted_duplication += 1
+            elif sv_type == SVType.InvertedTranslocation:
+                self.inverted_translocation += 1
+
+        def __add__(self, other: "Performance.SVTypeCounts") -> "Performance.SVTypeCounts":
+            return Performance.SVTypeCounts(
+                deletion=self.deletion + other.deletion,
+                translocation=self.translocation + other.translocation,
+                duplication=self.duplication + other.duplication,
+                insertion_or_small_deletion=self.insertion_or_small_deletion + other.insertion_or_small_deletion,
+                inplace_inversion=self.inplace_inversion + other.inplace_inversion,
+                inverted_translocation=self.inverted_translocation + other.inverted_translocation,
+                inverted_duplication=self.inverted_duplication + other.inverted_duplication,
+            )
+
+        def __sub__(self, other: "Performance.SVTypeCounts") -> "Performance.SVTypeCounts":
+            return Performance.SVTypeCounts(
+                deletion=self.deletion - other.deletion,
+                translocation=self.translocation - other.translocation,
+                duplication=self.duplication - other.duplication,
+                insertion_or_small_deletion=self.insertion_or_small_deletion - other.insertion_or_small_deletion,
+                inplace_inversion=self.inplace_inversion - other.inplace_inversion,
+                inverted_translocation=self.inverted_translocation - other.inverted_translocation,
+                inverted_duplication=self.inverted_duplication - other.inverted_duplication,
+            )
+
+    @dataclass
+    class Evaluation:
+        total_real_sites: int = 0
+        true_classification_count: int = 0
+        true_detection_count: int = 0
+        false_detection_count: int = 0
+        false_classification_details: ty.Union["Performance.SVTypeCounts", None] = None
+        false_detection_details: ty.Union["Performance.SVTypeCounts", None] = None
+
+    def evaluate(self, coverage: int):
+        evaluation_results: "Performance.Evaluation" = self.Evaluation()
+        detections = self.correct_detections(coverage)
+        classifications = self.correct_classifications(coverage)
+        evaluation_results.total_real_sites = len(self.detected[coverage])
+        evaluation_results.true_detection_count = len([True for x in detections.values() if True in x[0]])
+        evaluation_results.true_classification_count = len([True for x in classifications.values() if True in x[0]])
+        evaluation_results.false_classification_details = self.SVTypeCounts()
+        evaluation_results.false_detection_details = self.SVTypeCounts()
+        for bnx_name in detections:
+            evaluation_results.false_detection_details += detections[bnx_name][1]
+            evaluation_results.false_classification_details += classifications[bnx_name][1]
+        evaluation_results.false_classification_details -= evaluation_results.false_detection_details
+        for values in detections.values():
+            for value in values:
+                if not value:
+                    evaluation_results.false_detection_count += 1
+        return evaluation_results
 
 
 def tsv_filename_to_result(filename: str) -> ResultsForRun:
-
     # tsv filename -> 5949562-104552-del_120x.fasta.bnx_0.1_SV_results.tsv
-    path = "/".join(filename.split("/")[:-1])
-    tsv = filename.split("/")[-1]
+    assert filename.endswith("SV_results.tsv")
     left = filename.split(".")[0]
     coverage: int = int(float(filename.split("_")[4]) * 120)
-    bnx_name = f"{path}/{left}.fasta.bnx"
+    bnx_name = f"{left}.fasta.bnx"
     results: ResultsForRun = ResultsForRun.from_result_file(filename, coverage)
     results.filename = bnx_name
     return results
 
 
 def bnx_deletion_filename_to_result(filename: str) -> ResultsForRun:
+    # bnx filename -> 5949562-104552-del_120x.fasta.bnx
+    assert filename.endswith(".fasta.bnx")
     start, end, _ = filename.split("/")[-1].split("-")
     sv_type: SVType = SVType.Deletion
     chr_id: int = 1
-    origin_start: float = int(start)/1000
-    origin_end: float = int(end)/1000
-    target_chrid = None
-    target_start = None
-    target_end = None
+    origin_start: float = int(start) / 1000
+    origin_end: float = origin_start + (int(end) / 1000)
     results: ty.List[Result] = [Result(sv_type,
-                                      chr_id,
-                                      int(origin_start), int(origin_end),
-                                      target_chrid,
-                                      target_start, target_end)]
+                                       chr_id,
+                                       int(origin_start), int(origin_end),
+                                       None, None, None)]
     coverage: int = 120
     return ResultsForRun(results, filename, coverage)
-
