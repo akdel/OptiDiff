@@ -28,6 +28,40 @@ class Result:
     target_end: ty.Union[int, None]
 
     @classmethod
+    def from_bng_line(cls, line):
+        # SmapEntryID', 'QryContigID', 'RefcontigID1', 'RefcontigID2', 'QryStartPos', 'QryEndPos', 'RefStartPos', 'RefEndPos', 'Confidence', 'Type', 'XmapID1', 'XmapID2', 'LinkID', 'QryStartIdx', 'QryEndIdx', 'RefStartIdx', 'RefEndIdx', 'Zygosity', 'Genotype', 'GenotypeGroup', 'RawConfidence', 'RawConfidenceLeft', 'RawConfidenceRight', 'RawConfidenceCenter'
+        _, _, chr_id, target_chrid, _, _, origin_start, origin_end, _, type_string, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = line.split("\t")
+        type_string: str = type_string.lower()
+
+        def type_string_to_sv_type(type_string: str) -> SVType:
+            # TODO: This should be adapted into bng result types after the results are out.
+            if "insertion" in type_string:
+                return SVType.InsertionOrDeletion
+            elif "deletion" in type_string:
+                return SVType.Deletion
+            elif "inversion" in type_string:
+                if "translocation" in type_string:
+                    return SVType.InvertedTranslocation
+                elif "duplication" in type_string:
+                    return SVType.InvertedDuplication
+                else:
+                    return SVType.InplaceInversion
+            elif "translocation" in type_string:
+                return SVType.Translocation
+            elif "duplication" in type_string:
+                return SVType.Duplication
+            else:
+                return SVType.Unspecific
+
+        sv_type = type_string_to_sv_type(type_string)
+        return cls(sv_type,
+                   int(chr_id),
+                   int(float(origin_start)/1000),
+                   int(float(origin_end)/1000),
+                   int(target_chrid),
+                   None, None)
+
+    @classmethod
     def from_result_line(cls, line: str) -> "Result":
         type_string, chr_id, origin_start, origin_end, target_chrid, target_start, target_end = line.split("\t")
 
@@ -118,12 +152,20 @@ class ResultsForRun:
     filename: str
     coverage: int
 
+    class ResultFileType(Enum):
+        OptiTools = 1
+        BNG = 2
+
     @classmethod
-    def from_result_file(cls, filename: str, coverage: int) -> "ResultsForRun":
+    def from_result_file(cls, filename: str, coverage: int,
+                         file_type: "ResultsForRun.ResultFileType" = ResultFileType.OptiTools) -> "ResultsForRun":
         results: ty.List[Result] = list()
         for line in iter(open(filename, "r")):
             if not line.startswith("#"):
-                results.append(Result.from_result_line(line))
+                if file_type == ResultsForRun.ResultFileType.OptiTools:
+                    results.append(Result.from_result_line(line))
+                else:
+                    results.append(Result.from_bng_line(line))
         return cls(results, filename, coverage)
 
     def compare_to(self, other: "ResultsForRun") -> ty.List[bool]:
@@ -302,7 +344,7 @@ class Performance:
             evaluation_results.false_classification_details += classifications[bnx_name][1]
         evaluation_results.false_classification_details -= evaluation_results.false_detection_details
         for values in detections.values():
-            for value in values:
+            for value in values[0]:
                 if not value:
                     evaluation_results.false_detection_count += 1
         return evaluation_results
@@ -315,6 +357,17 @@ def tsv_filename_to_result(filename: str) -> ResultsForRun:
     coverage: int = int(float(filename.split("_")[4]) * 120)
     bnx_name = f"{left}.fasta.bnx"
     results: ResultsForRun = ResultsForRun.from_result_file(filename, coverage)
+    results.filename = bnx_name
+    return results
+
+
+def smap_filename_to_result(filename: str) -> ResultsForRun:
+    # tsv filename -> 5949562-104552-del_120x.fasta.bnx_0.1_SV_results.tsv
+    assert filename.endswith("SV_results.smap")
+    left = filename.split(".")[0]
+    coverage: int = int(float(filename.split("_")[4]) * 120)
+    bnx_name = f"{left}.fasta.bnx"
+    results: ResultsForRun = ResultsForRun.from_result_file(filename, coverage, file_type=ResultsForRun.ResultFileType.BNG)
     results.filename = bnx_name
     return results
 

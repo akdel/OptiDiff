@@ -302,7 +302,7 @@ if __name__ == "__main__":
         svd_fasta = SvdFromFastaArray(fasta.fasta_array, fasta.fasta_digestion_array, omsim_exec_path,
                                       omsim_enzyme_path,
                                       omsim_param_template_path, cov=1200)
-        svd_fasta.introduce_deletion(100_000, 10_000)
+        svd_fasta.inplace_inversion(300_000)
         svd_fasta.write_ref(
             fname=f"/home/biridir/PycharmProjects/optidiff/data/coverage_vs_prec/{'-'.join([str(y) for y in itertools.chain.from_iterable(svd_fasta.tracked_changes)])}_{120}x.fasta")
     exit()
