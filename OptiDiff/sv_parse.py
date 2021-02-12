@@ -48,7 +48,7 @@ class Result:
                     return SVType.InplaceInversion
             elif "translocation" in type_string:
                 return SVType.Translocation
-            elif "duplication" in type_string:
+            elif type_string in ["duplication", "translocation_intrachr"]:
                 return SVType.Duplication
             else:
                 return SVType.Unspecific
