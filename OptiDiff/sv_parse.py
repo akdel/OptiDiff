@@ -210,7 +210,8 @@ class Performance:
     @classmethod
     def from_folder(cls, path: str, ground_truth_function: ty.Callable,
                     tsv_parser_function: ty.Callable,
-                    with_run: ty.Union[None, SVDetectionParameters] = None) -> "Performance":
+                    with_run: ty.Union[None, SVDetectionParameters] = None,
+                    result_type: ResultsForRun.ResultFileType = ResultsForRun.ResultFileType.OptiTools) -> "Performance":
         bnx_files = glob.glob(path + "*.bnx")
         ground_truth = [ground_truth_function(x) for x in bnx_files]
         ground_truth = {result.filename: result for result in ground_truth}
@@ -234,7 +235,11 @@ class Performance:
                                                                       translocation_threshold=with_run.translocation_threshold)
         detected: ty.Dict[Coverage, ty.Dict[str, ResultsForRun]] = dict()
         used_coverages: ty.Set[int] = set()
-        for x in glob.glob(path + "*.tsv"):
+        if result_type == ResultsForRun.ResultFileType.OptiTools:
+            files: ty.List[str] = glob.glob(path + "*.tsv")
+        else:
+            files: ty.List[str] = glob.glob(path + "*.smap")
+        for x in files:
             current_detected = tsv_parser_function(x)
             if current_detected.coverage not in detected:
                 detected[current_detected.coverage] = {}
@@ -362,12 +367,13 @@ def tsv_filename_to_result(filename: str) -> ResultsForRun:
 
 
 def smap_filename_to_result(filename: str) -> ResultsForRun:
-    # tsv filename -> 5949562-104552-del_120x.fasta.bnx_0.1_SV_results.tsv
-    assert filename.endswith("SV_results.smap")
+    # tsv filename -> 5949562-104552-del_120x.fasta.bnx.0.1.smap
+    assert filename.endswith(".smap")
     left = filename.split(".")[0]
-    coverage: int = int(float(filename.split("_")[4]) * 120)
+    coverage: int = int(float(".".join(filename.split(".")[3:5])) * 120)
     bnx_name = f"{left}.fasta.bnx"
-    results: ResultsForRun = ResultsForRun.from_result_file(filename, coverage, file_type=ResultsForRun.ResultFileType.BNG)
+    results: ResultsForRun = ResultsForRun.from_result_file(filename, coverage,
+                                                            file_type=ResultsForRun.ResultFileType.BNG)
     results.filename = bnx_name
     return results
 

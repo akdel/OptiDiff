@@ -787,7 +787,10 @@ class Inversion:
 
     @property
     def line(self):
-        target_chrid, _, target_start, target_end = self.region
+        if type(self.based_on) in [Translocation, Duplication]:
+            target_chrid, target_start, target_end = self.region
+        else:
+            target_chrid, _, target_start, target_end = self.region
         if type(self.based_on) == Duplication:
             chrid, _, origin_start, origin_end = self.based_on.translocation.origin
         elif type(self.based_on) == Translocation:
