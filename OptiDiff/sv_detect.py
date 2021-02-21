@@ -106,12 +106,12 @@ class CmapToSignal(utils.CmapParser):
         utils.CmapParser.__init__(self, cmap_path)
         self.read_and_load_cmap_file()
         self.get_position_indexes()
-        self.simulated_chromosomes = dict()
+        self.simulated_chromosomes = {}
         self.chromosome_lsh = None
-        self.chromosome_indices = list()
-        self.chr_segments = list()
-        self.chromosome_segment_indices = list()
-        self.chromosome_segment_density = dict()
+        self.chromosome_indices = []
+        self.chr_segments = []
+        self.chromosome_segment_indices = []
+        self.chromosome_segment_density = {}
         self.prepared = False
         self.segment_length = None
         self.zoom_factor = None
@@ -298,8 +298,7 @@ class Scores:
             old_path = visited[now][1]
             for next_segment_id in next_segment_ids:
                 new_cost = cost + abs(now[1] - next_segment_id)
-                if (next_key_id, next_segment_id) not in visited or visited[(next_key_id, next_segment_id)][
-                    0] >= new_cost:
+                if (next_key_id, next_segment_id) not in visited or visited[(next_key_id, next_segment_id)][0] >= new_cost:
                     current.append((next_key_id, next_segment_id))
                     visited[(next_key_id, next_segment_id)] = (new_cost, old_path + [next_segment_id])
         return []
@@ -331,14 +330,13 @@ class MoleculeSegmentPath:
         return np.unpackbits(np.array([b], dtype=f"|S{nbits // 8}").view("uint8"))
 
 
-def segment_paths_from_scores(scores: Generator[Scores, Any, None], optimum_path: bool = False) -> List[
-    MoleculeSegmentPath]:
+def segment_paths_from_scores(scores: Generator[Scores, Any, None], optimum_path: bool = False) -> List[MoleculeSegmentPath]:
     molecules: Dict[int, MoleculeSegmentPath] = dict()
     for score in scores:
         segments: List[Tuple[int, bytes, int, bool]] = [(int(score.segment_matches[i][0]), score.segments[i],
                                                          score.chromosome_id,
                                                          score.molecule_id > 0) if i in score.segment_matches else (
-        -1, score.segments[i]) for i in score.segment_matches]
+            -1, score.segments[i]) for i in score.segment_matches]
         if abs(score.molecule_id) not in molecules:
             if score.molecule_id > 0:
                 molecules[abs(score.molecule_id)] = MoleculeSegmentPath(abs(score.molecule_id),
@@ -353,19 +351,15 @@ def segment_paths_from_scores(scores: Generator[Scores, Any, None], optimum_path
         else:
             if score.molecule_id > 0:
                 molecules[abs(score.molecule_id)].forward_paths[score.chromosome_id] = score.get_best_path(optimum_path)
-                molecules[abs(score.molecule_id)].segments += segments
             else:
                 molecules[abs(score.molecule_id)].reverse_paths[score.chromosome_id] = score.get_best_path(optimum_path)
-                molecules[abs(score.molecule_id)].segments += segments
-
+            molecules[abs(score.molecule_id)].segments += segments
     return list(molecules.values())
 
 
 def molecule_is_inverted_in_chromosome(molecule: MoleculeSegmentPath, chr_id: int):
-    if len(molecule.forward_paths[chr_id]) and len(molecule.reverse_paths[chr_id]):
-        return True
-    else:
-        return False
+    return bool(len(molecule.forward_paths[chr_id])
+                and len(molecule.reverse_paths[chr_id]))
 
 
 def molecule_is_inverted_all_chromosomes(molecule: MoleculeSegmentPath):
@@ -375,10 +369,7 @@ def molecule_is_inverted_all_chromosomes(molecule: MoleculeSegmentPath):
             forward = True
         if len(molecule.reverse_paths[chr_id]):
             reverse = True
-    if forward and reverse:
-        return True
-    else:
-        return False
+    return forward and reverse
 
 
 @dataclass
@@ -437,7 +428,6 @@ class MoleculesOnChromosomes:
     def plot_chromosome_segment(self, segment_id: int, chromosome_id: int):
         chromosome: ChromosomeSeg = self.chromosomes[chromosome_id]
         np.unpackbits(chromosome.segments[segment_id])
-        pass
 
     def inverted_ratio_from_chromosome(self, chromosome_id: int) -> np.ndarray:
         chromosome: ChromosomeSeg = self.chromosomes[chromosome_id]
@@ -553,8 +543,8 @@ def get_molecules_in_region(chr_id, start, end, reference: MoleculesOnChromosome
     sv_molecules_left = [sv_candidate.molecules[k] for k in proximal_left_sv_molecule_ids]
     sv_molecules_right = [sv_candidate.molecules[k] for k in proximal_right_sv_molecule_ids]
 
-    inverted_sv_ratios = list()
-    inverted_ref_ratios = list()
+    inverted_sv_ratios = []
+    inverted_ref_ratios = []
     for molecule in sv_molecules_left + sv_molecules_right:
         forwards = 0.
         backwards = 0.
@@ -578,10 +568,9 @@ def get_molecules_in_region(chr_id, start, end, reference: MoleculesOnChromosome
     if np.mean(inverted_sv_ratios) <= np.mean(inverted_ref_ratios):
         return reference_molecules_left, reference_molecules_right, \
                sv_molecules_left, sv_molecules_right, (1, 1)
-    else:
-        tscore, pvalue = stats.ttest_ind(inverted_sv_ratios, inverted_ref_ratios, equal_var=False)
-        return reference_molecules_left, reference_molecules_right, sv_molecules_left, sv_molecules_right, (
-            tscore, pvalue)
+    tscore, pvalue = stats.ttest_ind(inverted_sv_ratios, inverted_ref_ratios, equal_var=False)
+    return reference_molecules_left, reference_molecules_right, sv_molecules_left, sv_molecules_right, (
+        tscore, pvalue)
 
 
 def find_boundaries(sig, peak, snr=1.5):
@@ -653,7 +642,7 @@ class Inversion:
 
 def check_translocation_or_inversion(unspecific_sv: UnspecificSV,
                                      chromosome: ChromosomeSeg,
-                                     thr: float = 25, # was 5 before
+                                     thr: float = 25,  # was 5 before
                                      inversion_test: [bool, Translocation, Duplication, UnspecificSV] = False) -> [
     Translocation, UnspecificSV, Inversion]:
     chromosome_id = chromosome.index
@@ -1033,6 +1022,7 @@ def molecule_generator_from_bnx_lines(bnx_lines, reverse: bool, segment_length: 
 
 def get_array_dict(bnx_obj: utils.BnxParser):
     return {int(x["info"][1]): x for x in bnx_obj.bnx_arrays}
+
 
 print(True)
 
