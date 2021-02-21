@@ -9,7 +9,8 @@ import numba as nb
 from scipy import stats, signal
 import itertools
 import random
-import fire
+from sklearn import preprocessing as pre
+
 
 BNX_HEAD = "bnx_head.txt"
 
@@ -425,6 +426,13 @@ class MoleculesOnChromosomes:
         sig[np.where(sig < 1)[0]] = 1
         return sig
 
+    def scaled_signal_from_chromosome(self, chromosome_id: int,
+                                      robust_scaler_quirtile_range: Tuple[int, int] = (5, 95)) -> np.ndarray:
+        return pre.robust_scale(self.signal_from_chromosome(chromosome_id),
+                                with_centering=False,
+                                quantile_range=robust_scaler_quirtile_range)
+
+
     def plot_chromosome_segment(self, segment_id: int, chromosome_id: int):
         chromosome: ChromosomeSeg = self.chromosomes[chromosome_id]
         np.unpackbits(chromosome.segments[segment_id])
@@ -491,17 +499,27 @@ class UnspecificSV:
 
 def find_unspecific_sv_sites(reference: MoleculesOnChromosomes,
                              sv_candidate: MoleculesOnChromosomes,
-                             z_thr: float = 5.) -> List[UnspecificSV]:
+                             z_thr: float = 30.,
+                             robust_scaler_quirtile_range: Tuple[int, int] = (5, 95),
+                             power: int = 1,
+                             debug: bool = False) -> List[UnspecificSV]:
+
     result: List[UnspecificSV] = list()
     for chr_id in reference.counts_per_segment.keys():
-        assert (chr_id in reference.counts_per_segment) and (chr_id in sv_candidate.counts_per_segment)
-        sig = reference.signal_from_chromosome(chr_id) / sv_candidate.signal_from_chromosome(chr_id)
+        assert (chr_id in reference.counts_per_segment) and (chr_id in sv_candidate.counts_per_segment) # makes sure that the chromosomes match
+        reference_signal: np.ndarray = reference.scaled_signal_from_chromosome(chr_id,
+                                                                               robust_scaler_quirtile_range=robust_scaler_quirtile_range)
+        sv_candidate_signal: np.ndarray = sv_candidate.scaled_signal_from_chromosome(chr_id,
+                                                                                     robust_scaler_quirtile_range=robust_scaler_quirtile_range)
+        sig: np.ndarry = ((reference_signal - sv_candidate_signal)**2 / ((reference_signal + sv_candidate_signal)/2))**power
         peak_indices = utils.get_peaks(sig, z_thr, np.median(sig))
-        # plt.plot(sig)
-        # plt.scatter((peak_indices), sig[np.array(peak_indices).astype(int)], c="red")
-        # plt.show()
+        if debug:
+            plt.plot(sig)
+            plt.scatter((peak_indices), sig[np.array(peak_indices).astype(int)], c="red")
+            plt.show()
         for start, end, score in list({find_boundaries(sig, x) for x in peak_indices}):
-            # print(start, end, score)
+            if debug:
+                print(start, end, score, "\n")
             reference_molecules_left, reference_molecules_right, \
             sv_molecules_left, sv_molecules_right, \
             inversions = get_molecules_in_region(chr_id, start, end, reference, sv_candidate)
@@ -521,7 +539,6 @@ def get_molecules_in_region(chr_id, start, end, reference: MoleculesOnChromosome
     start_kb = start - (reference.chromosomes[chr_id].segment_length / 2) * 2
     end_kb = end + (reference.chromosomes[chr_id].segment_length / 2) * 2
     mid_kb = (start + end) / 2
-    inversion_number = 0
 
     proximal_left_segment_ids = [i for (i, x) in enumerate(reference.chromosomes[chr_id].kb_indices) if
                                  start_kb < x <= mid_kb]
