@@ -198,6 +198,11 @@ class SVDetectionParameters:
     unspecific_sv_threshold: ty.Union[float, str] = 10.0
     density_filter: int = 40
     translocation_threshold: int = 10
+    minimum_reference_coverage: int = 1
+    power_1: int = 1
+    power_2: int = 1
+    sv_robust_scaler_quirtile_range:ty.Tuple[int, int] = (10, 90)
+    debug_plots: bool = False
 
 
 @dataclass
@@ -232,7 +237,12 @@ class Performance:
                                                                       distance_threshold=with_run.distance_threshold,
                                                                       unspecific_sv_threshold=with_run.unspecific_sv_threshold,
                                                                       density_filter=with_run.density_filter,
-                                                                      translocation_threshold=with_run.translocation_threshold)
+                                                                      translocation_threshold=with_run.translocation_threshold,
+                                                                      power_2=with_run.power_2,
+                                                                      power_1=with_run.power_1,
+                                                                      minimum_reference_coverage=with_run.minimum_reference_coverage,
+                                                                      robust_scaler_quirtile_range=with_run.sv_robust_scaler_quirtile_range,
+                                                                      debug_plots = with_run.debug_plots)
         detected: ty.Dict[Coverage, ty.Dict[str, ResultsForRun]] = dict()
         used_coverages: ty.Set[int] = set()
         if result_type == ResultsForRun.ResultFileType.OptiTools:

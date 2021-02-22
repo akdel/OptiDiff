@@ -410,7 +410,7 @@ class MoleculesOnChromosomes:
         return cls({x.molecule_id: x for x in molecule_segment_paths},
                    chromosomes_dict, counts_per_segment, molecule_ids_per_segment, distance_thr, {})
 
-    def signal_from_chromosome(self, chromosome_id: int) -> np.ndarray:
+    def signal_from_chromosome(self, chromosome_id: int, minimum_coverage: float = 0) -> np.ndarray:
         chromosome: ChromosomeSeg = self.chromosomes[chromosome_id]
         molecule_segments = [list(itertools.chain.from_iterable([x.forward_paths[chromosome_id],
                                                                  x.reverse_paths[chromosome_id]])) for x in
@@ -423,12 +423,14 @@ class MoleculesOnChromosomes:
                              int(chromosome.kb_indices[seg] + (chromosome.segment_length / 2))  # / self.distance_thr))
                 current[start: end] = signal.windows.gaussian(end - start, (end - start) * 0.5)
             sig += current
-        sig[np.where(sig < 1)[0]] = 1
+        sig[np.where(sig < max(1., minimum_coverage))[0]] = 1
         return sig
 
     def scaled_signal_from_chromosome(self, chromosome_id: int,
-                                      robust_scaler_quirtile_range: Tuple[int, int] = (5, 95)) -> np.ndarray:
-        return pre.robust_scale(self.signal_from_chromosome(chromosome_id),
+                                      robust_scaler_quirtile_range: Tuple[int, int] = (5, 95),
+                                      minimum_coverage: float = 0) -> np.ndarray:
+        return pre.robust_scale(self.signal_from_chromosome(chromosome_id,
+                                                            minimum_coverage=minimum_coverage),
                                 with_centering=False,
                                 quantile_range=robust_scaler_quirtile_range)
 
@@ -503,17 +505,19 @@ def find_unspecific_sv_sites(reference: MoleculesOnChromosomes,
                              robust_scaler_quirtile_range: Tuple[int, int] = (5, 95),
                              power_1: int = 1,
                              power_2: int = 1,
-                             debug: bool = False) -> List[UnspecificSV]:
+                             debug: bool = False,
+                             minimum_reference_coverage: float = 0) -> List[UnspecificSV]:
 
     result: List[UnspecificSV] = list()
     for chr_id in reference.counts_per_segment.keys():
         assert (chr_id in reference.counts_per_segment) and (chr_id in sv_candidate.counts_per_segment) # makes sure that the chromosomes match
         reference_signal: np.ndarray = reference.scaled_signal_from_chromosome(chr_id,
-                                                                               robust_scaler_quirtile_range=robust_scaler_quirtile_range)
+                                                                               robust_scaler_quirtile_range=robust_scaler_quirtile_range,
+                                                                               minimum_coverage=minimum_reference_coverage)
         sv_candidate_signal: np.ndarray = sv_candidate.scaled_signal_from_chromosome(chr_id,
                                                                                      robust_scaler_quirtile_range=robust_scaler_quirtile_range)
-        sig: np.ndarry = ((reference_signal - sv_candidate_signal) ** 2 / ((reference_signal + sv_candidate_signal) / 2) ** power_2) ** power_1
-        diff: np.ndarry = reference_signal - sv_candidate_signal
+        sig: np.ndarray = ((reference_signal - sv_candidate_signal) ** 2 / ((reference_signal + sv_candidate_signal) / 2) ** power_2) ** power_1
+        diff: np.ndarray = reference_signal - sv_candidate_signal
         median: float = np.median(sig)
         sig = np.array([median if diff[i] < 0 else x for (i, x) in enumerate(sig)])
         sig = ndimage.gaussian_filter1d(sig, sigma=3)
@@ -597,7 +601,7 @@ def get_molecules_in_region(chr_id, start, end, reference: MoleculesOnChromosome
 
 
 def find_boundaries(sig, peak, snr=1.5):
-    snr_thr = max(1, np.median(sig)) * snr
+    snr_thr = max(0.2, np.median(sig)) * snr
     start = end = peak
     for end in range(peak, len(sig) - 5):
         if np.median(sig[end:end + 3]) > snr_thr:
@@ -957,9 +961,14 @@ def detect_structural_variation_for_multiple_datasets(cmap_reference_file: str,
                                                       zoom_factor: int = 500,
                                                       minimum_molecule_length: int = 150_000,
                                                       distance_threshold: float = 1.7,
-                                                      unspecific_sv_threshold: Union[float, str] = 10.0,
+                                                      unspecific_sv_threshold: Union[float, str] = 30.0,
                                                       density_filter: int = 40,
-                                                      translocation_threshold: int = 10) -> List[SvResult]:
+                                                      translocation_threshold: int = 10,
+                                                      robust_scaler_quirtile_range: Tuple[int, int] = (10, 90),
+                                                      power_1: int = 1,
+                                                      power_2: int = 1,
+                                                      minimum_reference_coverage: int = 1,
+                                                      debug_plots: bool = False) -> List[SvResult]:
     reference_molecules_on_chromosomes: MoleculesOnChromosomes = \
         filter_and_prepare_molecules_on_chromosomes(
             cmap_reference_file,
@@ -997,7 +1006,12 @@ def detect_structural_variation_for_multiple_datasets(cmap_reference_file: str,
             )
         for unspecific_sv in find_unspecific_sv_sites(reference_molecules_on_chromosomes,
                                                       sv_candidate_molecules_on_chromosomes,
-                                                      z_thr=unspecific_sv_threshold):
+                                                      z_thr=unspecific_sv_threshold,
+                                                      robust_scaler_quirtile_range=robust_scaler_quirtile_range,
+                                                      power_1=power_1,
+                                                      power_2=power_2,
+                                                      minimum_reference_coverage=minimum_reference_coverage,
+                                                      debug=debug_plots):
             if unspecific_sv.region:
                 svs_found.append(
                     SvResult(
