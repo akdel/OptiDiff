@@ -501,7 +501,8 @@ def find_unspecific_sv_sites(reference: MoleculesOnChromosomes,
                              sv_candidate: MoleculesOnChromosomes,
                              z_thr: float = 30.,
                              robust_scaler_quirtile_range: Tuple[int, int] = (5, 95),
-                             power: int = 1,
+                             power_1: int = 1,
+                             power_2: int = 1,
                              debug: bool = False) -> List[UnspecificSV]:
 
     result: List[UnspecificSV] = list()
@@ -511,11 +512,16 @@ def find_unspecific_sv_sites(reference: MoleculesOnChromosomes,
                                                                                robust_scaler_quirtile_range=robust_scaler_quirtile_range)
         sv_candidate_signal: np.ndarray = sv_candidate.scaled_signal_from_chromosome(chr_id,
                                                                                      robust_scaler_quirtile_range=robust_scaler_quirtile_range)
-        sig: np.ndarry = ((reference_signal - sv_candidate_signal)**2 / ((reference_signal + sv_candidate_signal)/2))**power
-        peak_indices = utils.get_peaks(sig, z_thr, np.median(sig))
+        sig: np.ndarry = ((reference_signal - sv_candidate_signal) ** 2 / ((reference_signal + sv_candidate_signal) / 2) ** power_2) ** power_1
+        diff: np.ndarry = reference_signal - sv_candidate_signal
+        median: float = np.median(sig)
+        sig = np.array([median if diff[i] < 0 else x for (i, x) in enumerate(sig)])
+        sig = ndimage.gaussian_filter1d(sig, sigma=3)
+        peak_indices = utils.get_peaks(sig, z_thr, median)
         if debug:
+            plt.figure(figsize=(15, 5))
             plt.plot(sig)
-            plt.scatter((peak_indices), sig[np.array(peak_indices).astype(int)], c="red")
+            plt.scatter(peak_indices, sig[np.array(peak_indices).astype(int)], c="red")
             plt.show()
         for start, end, score in list({find_boundaries(sig, x) for x in peak_indices}):
             if debug:
