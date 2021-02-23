@@ -1,5 +1,6 @@
 from OptiScan import utils
-from typing import List, Tuple, Dict, Generator, Any, Iterator, Union
+from typing import List, Tuple, Dict, Generator, Any, Iterator, Union, Callable
+from enum import Enum
 import numpy as np
 from scipy import ndimage
 import matplotlib.pyplot as plt
@@ -37,6 +38,13 @@ def comp_bins(b1, b2):
             for r in range(b1.shape[-1]):
                 heatmap[i, j] += bit_distance(b1[i, r], b2[j, r])
     return heatmap
+
+
+class DistanceFunctions(Enum):
+    F1 = lambda reference_signal, sv_candidate_signal, power_1=1, power_2=1: ((reference_signal - sv_candidate_signal) ** 2 / ((reference_signal + sv_candidate_signal) / 2) ** power_2) ** power_1
+    F2 = lambda reference_signal, sv_candidate_signal, power_1=1, power_2=1: np.abs(reference_signal - sv_candidate_signal) / (np.log1p(reference_signal) + 0.5)
+    F3 = lambda reference_signal, sv_candidate_signal, power_1=1, power_2=1: ((reference_signal - sv_candidate_signal) ** 2 / (reference_signal ** power_2)) ** power_1
+    F4 = lambda reference_signal, sv_candidate_signal, power_1=1, power_2=1: (reference_signal - sv_candidate_signal)**2 / (np.log1p(reference_signal) + 0.5)
 
 
 @dataclass
@@ -506,7 +514,9 @@ def find_unspecific_sv_sites(reference: MoleculesOnChromosomes,
                              power_1: int = 1,
                              power_2: int = 1,
                              debug: bool = False,
-                             minimum_reference_coverage: float = 0) -> List[UnspecificSV]:
+                             minimum_reference_coverage: float = 0,
+                             distance_function: Callable = DistanceFunctions.F1
+                             ) -> List[UnspecificSV]:
 
     result: List[UnspecificSV] = list()
     for chr_id in reference.counts_per_segment.keys():
@@ -516,7 +526,7 @@ def find_unspecific_sv_sites(reference: MoleculesOnChromosomes,
                                                                                minimum_coverage=minimum_reference_coverage)
         sv_candidate_signal: np.ndarray = sv_candidate.scaled_signal_from_chromosome(chr_id,
                                                                                      robust_scaler_quirtile_range=robust_scaler_quirtile_range)
-        sig: np.ndarray = ((reference_signal - sv_candidate_signal) ** 2 / ((reference_signal + sv_candidate_signal) / 2) ** power_2) ** power_1
+        sig: np.ndarray = distance_function(reference_signal, sv_candidate_signal, power_1=power_1, power_2=power_2)
         diff: np.ndarray = reference_signal - sv_candidate_signal
         median: float = np.median(sig)
         sig = np.array([median if diff[i] < 0 else x for (i, x) in enumerate(sig)])
@@ -968,7 +978,8 @@ def detect_structural_variation_for_multiple_datasets(cmap_reference_file: str,
                                                       power_1: int = 1,
                                                       power_2: int = 1,
                                                       minimum_reference_coverage: int = 1,
-                                                      debug_plots: bool = False) -> List[SvResult]:
+                                                      debug_plots: bool = False,
+                                                      distance_function: Callable = DistanceFunctions.F1) -> List[SvResult]:
     reference_molecules_on_chromosomes: MoleculesOnChromosomes = \
         filter_and_prepare_molecules_on_chromosomes(
             cmap_reference_file,
@@ -1011,7 +1022,8 @@ def detect_structural_variation_for_multiple_datasets(cmap_reference_file: str,
                                                       power_1=power_1,
                                                       power_2=power_2,
                                                       minimum_reference_coverage=minimum_reference_coverage,
-                                                      debug=debug_plots):
+                                                      debug=debug_plots,
+                                                      distance_function=distance_function):
             if unspecific_sv.region:
                 svs_found.append(
                     SvResult(

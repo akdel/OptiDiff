@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import itertools
 import typing as ty
 from enum import Enum
+from OptiDiff.sv_detect import DistanceFunctions
 
 
 class SVType(Enum):
@@ -30,7 +31,8 @@ class Result:
     @classmethod
     def from_bng_line(cls, line):
         # SmapEntryID', 'QryContigID', 'RefcontigID1', 'RefcontigID2', 'QryStartPos', 'QryEndPos', 'RefStartPos', 'RefEndPos', 'Confidence', 'Type', 'XmapID1', 'XmapID2', 'LinkID', 'QryStartIdx', 'QryEndIdx', 'RefStartIdx', 'RefEndIdx', 'Zygosity', 'Genotype', 'GenotypeGroup', 'RawConfidence', 'RawConfidenceLeft', 'RawConfidenceRight', 'RawConfidenceCenter'
-        _, _, chr_id, target_chrid, _, _, origin_start, origin_end, _, type_string, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = line.split("\t")
+        _, _, chr_id, target_chrid, _, _, origin_start, origin_end, _, type_string, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = line.split(
+            "\t")
         type_string: str = type_string.lower()
 
         def type_string_to_sv_type(type_string: str) -> SVType:
@@ -56,8 +58,8 @@ class Result:
         sv_type = type_string_to_sv_type(type_string)
         return cls(sv_type,
                    int(chr_id),
-                   int(float(origin_start)/1000),
-                   int(float(origin_end)/1000),
+                   int(float(origin_start) / 1000),
+                   int(float(origin_end) / 1000),
                    int(target_chrid),
                    None, None)
 
@@ -201,9 +203,9 @@ class SVDetectionParameters:
     minimum_reference_coverage: int = 1
     power_1: int = 1
     power_2: int = 1
-    sv_robust_scaler_quirtile_range:ty.Tuple[int, int] = (10, 90)
+    sv_robust_scaler_quirtile_range: ty.Tuple[int, int] = (10, 90)
     debug_plots: bool = False
-
+    distance_function: ty.Callable = DistanceFunctions.F1
 
 @dataclass
 class Performance:
@@ -242,7 +244,8 @@ class Performance:
                                                                       power_1=with_run.power_1,
                                                                       minimum_reference_coverage=with_run.minimum_reference_coverage,
                                                                       robust_scaler_quirtile_range=with_run.sv_robust_scaler_quirtile_range,
-                                                                      debug_plots = with_run.debug_plots)
+                                                                      debug_plots=with_run.debug_plots,
+                                                                      distance_function=with_run.distance_function)
         detected: ty.Dict[Coverage, ty.Dict[str, ResultsForRun]] = dict()
         used_coverages: ty.Set[int] = set()
         if result_type == ResultsForRun.ResultFileType.OptiTools:
