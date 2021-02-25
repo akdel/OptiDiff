@@ -1084,6 +1084,16 @@ def merge_to_heterozygous(reference_bnx_path: str,
     return sv_bnx.bnx_arrays
 
 
+def merge_files_to_heterozygous(reference_bnx_path: str,
+                                sv_folder_path: str,
+                                sv_to_reference_ratio: float) -> None:
+    from glob import glob
+    sv_files = glob(sv_folder_path + "*bnx")
+    for sv_bnx_file in sv_files:
+        _ = merge_to_heterozygous(reference_bnx_path, sv_bnx_file,
+                                  sv_to_reference_ratio, file_write=True)
+
+
 def molecule_generator_from_bnx_lines(bnx_lines, reverse: bool, segment_length: int, zoom_factor: int, nbits: int) -> \
         Iterator[MoleculeSeg]:
     for line in bnx_lines:
