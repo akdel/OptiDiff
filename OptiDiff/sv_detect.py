@@ -65,8 +65,9 @@ class MoleculeSeg:
     @classmethod
     def from_bnx_line(cls, bnx_array_entry: dict, reverse=False,
                       segment_length: int = 200, zoom_factor: int = 500,
-                      nbits: int = 64, lower_bound: int = 3, snr: float = 3.5):
-        index: int = int(bnx_array_entry["info"][1])
+                      nbits: int = 64, lower_bound: int = 3, snr: float = 3.5,
+                      shift_id: int = 0):
+        index: int = int(bnx_array_entry["info"][1]) + shift_id
         length: float = float(bnx_array_entry["info"][2])
         labels: np.ndarray = (np.array(bnx_array_entry["labels"][:-1]) / zoom_factor).astype(int)[
             np.array(bnx_array_entry["label_snr"]) >= snr]
@@ -979,7 +980,8 @@ def detect_structural_variation_for_multiple_datasets(cmap_reference_file: str,
                                                       power_2: int = 1,
                                                       minimum_reference_coverage: int = 1,
                                                       debug_plots: bool = False,
-                                                      distance_function: Callable = DistanceFunctions.F1) -> List[SvResult]:
+                                                      distance_function: Callable = DistanceFunctions.F1,
+                                                      ) -> List[SvResult]:
     reference_molecules_on_chromosomes: MoleculesOnChromosomes = \
         filter_and_prepare_molecules_on_chromosomes(
             cmap_reference_file,
@@ -1047,7 +1049,8 @@ def detect_structural_variation_for_multiple_datasets(cmap_reference_file: str,
 
 def get_subsampled_bnx_lines(bnx_path: str,
                              minimum_molecule_length: int,
-                             subsample_ratio: float):
+                             subsample_ratio: float,
+                             file_write: bool = True):
     bnx: utils.BnxParser = utils.BnxParser(bnx_path)
     bnx.read_bnx_file()
     lines = random.choices(
@@ -1058,8 +1061,27 @@ def get_subsampled_bnx_lines(bnx_path: str,
     used_molecule_ids = [int(x["info"][1]) for x in lines]
     array_dict = get_array_dict(bnx)
     bnx.bnx_arrays = [array_dict[x] for x in used_molecule_ids]
-    bnx.write_arrays_as_bnx(f"{bnx_path}.{subsample_ratio}")
+    if file_write:
+        bnx.write_arrays_as_bnx(f"{bnx_path}.{subsample_ratio}")
     return lines
+
+
+def merge_to_heterozygous(reference_bnx_path: str,
+                          sv_bnx_path: str,
+                          sv_to_reference_ratio: float,
+                          file_write: bool = True):
+    sv_bnx: utils.BnxParser = utils.BnxParser(sv_bnx_path)
+    ref_lines = get_subsampled_bnx_lines(reference_bnx_path, 0,
+                                         sv_to_reference_ratio,
+                                         file_write=False)
+    id_shift = max(int(line["info"][1]) for line in ref_lines)
+    sv_bnx_lines = get_array_dict(sv_bnx)
+    for line in sv_bnx_lines:
+        line["info"][1] = str(int(line["info"][1]) + id_shift)
+    sv_bnx.bnx_arrays = ref_lines + sv_bnx_lines
+    if file_write:
+        sv_bnx.write_arrays_as_bnx(f"{sv_bnx_path}.heterozygous")
+    return sv_bnx.bnx_arrays
 
 
 def molecule_generator_from_bnx_lines(bnx_lines, reverse: bool, segment_length: int, zoom_factor: int, nbits: int) -> \
