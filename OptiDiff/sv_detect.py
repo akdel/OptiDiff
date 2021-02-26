@@ -1076,9 +1076,9 @@ def merge_to_heterozygous(reference_bnx_path: str,
                                          file_write=False)
     id_shift = max(int(line["info"][1]) for line in ref_lines)
     sv_bnx_lines = get_array_dict(sv_bnx)
-    for line in sv_bnx_lines:
-        line["info"][1] = str(int(line["info"][1]) + id_shift)
-    sv_bnx.bnx_arrays = ref_lines + sv_bnx_lines
+    for bnx_id in sv_bnx_lines.keys():
+        sv_bnx_lines[bnx_id]["info"][1] = str(int(sv_bnx_lines[bnx_id]["info"][1]) + id_shift)
+    sv_bnx.bnx_arrays = ref_lines + list(sv_bnx_lines.items())
     if file_write:
         sv_bnx.write_arrays_as_bnx(f"{sv_bnx_path}.heterozygous")
     return sv_bnx.bnx_arrays
@@ -1104,8 +1104,6 @@ def molecule_generator_from_bnx_lines(bnx_lines, reverse: bool, segment_length: 
 def get_array_dict(bnx_obj: utils.BnxParser):
     return {int(x["info"][1]): x for x in bnx_obj.bnx_arrays}
 
-
-print(True)
 
 if __name__ == "__main__":
     pass
