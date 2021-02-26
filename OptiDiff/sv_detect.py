@@ -1071,6 +1071,7 @@ def merge_to_heterozygous(reference_bnx_path: str,
                           sv_to_reference_ratio: float,
                           file_write: bool = True):
     sv_bnx: utils.BnxParser = utils.BnxParser(sv_bnx_path)
+    sv_bnx.read_bnx_file()
     ref_lines = get_subsampled_bnx_lines(reference_bnx_path, 0,
                                          sv_to_reference_ratio,
                                          file_write=False)
