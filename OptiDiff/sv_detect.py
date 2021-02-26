@@ -1079,7 +1079,7 @@ def merge_to_heterozygous(reference_bnx_path: str,
     sv_bnx_lines = get_array_dict(sv_bnx)
     for bnx_id in sv_bnx_lines.keys():
         sv_bnx_lines[bnx_id]["info"][1] = str(int(sv_bnx_lines[bnx_id]["info"][1]) + id_shift)
-    sv_bnx.bnx_arrays = ref_lines + list(sv_bnx_lines.items())
+    sv_bnx.bnx_arrays = ref_lines + list(sv_bnx_lines.values())
     if file_write:
         sv_bnx.write_arrays_as_bnx(f"{sv_bnx_path}.heterozygous")
     return sv_bnx.bnx_arrays
