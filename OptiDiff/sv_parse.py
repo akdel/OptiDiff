@@ -207,12 +207,32 @@ class SVDetectionParameters:
     debug_plots: bool = False
     distance_function: ty.Callable = DistanceFunctions.F1
 
+
 @dataclass
 class Performance:
-    simulated_filenames: ty.Dict[Coverage, str]
+    simulated_filenames: ty.List[str]
     ground_truth: ty.Dict[str, ResultsForRun]
     detected: ty.Dict[Coverage, ty.Dict[str, ResultsForRun]]
     coverages: ty.Set[int]
+
+    @classmethod
+    def from_filenames_bng(cls, bnx_files: ty.List[str],
+                           tsv_files: ty.List[str],
+                           ground_truth_function: ty.Callable,
+                           tsv_parser_function: ty.Callable) -> "Performance":
+        ground_truth = [ground_truth_function(x) for x in bnx_files]
+        ground_truth = {result.filename: result for result in ground_truth}
+
+        detected: ty.Dict[Coverage, ty.Dict[str, ResultsForRun]] = dict()
+        used_coverages: ty.Set[int] = set()
+        files: ty.List[str] = tsv_files
+        for x in files:
+            current_detected = tsv_parser_function(x)
+            if current_detected.coverage not in detected:
+                detected[current_detected.coverage] = {}
+            detected[current_detected.coverage][current_detected.filename] = current_detected
+            used_coverages.add(current_detected.coverage)
+        return cls(bnx_files, ground_truth, detected, used_coverages)
 
     @classmethod
     def from_folder(cls, path: str, ground_truth_function: ty.Callable,
