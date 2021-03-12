@@ -182,6 +182,19 @@ class SvdFromFastaArray:
             (self.fasta_array[:start], self.fasta_array_rev[::-1][start:end][::-1], self.fasta_array[end:]))
         self.tracked_changes.append((start, end, "inv"))
 
+    def copy_paste_exact(self, origin, length, target, inverted=False):
+        start = int(origin)
+        end = int(start + length)
+        _to = int(target)
+        if not inverted:
+            self.fasta_array = np.concatenate(
+                (self.fasta_array[:_to], self.fasta_array[start:end], self.fasta_array[_to:]))
+            self.tracked_changes.append((start, end, _to, "dup"))
+        else:
+            self.fasta_array = np.concatenate(
+                (self.fasta_array[:_to], self.fasta_array_rev[::-1][start:end][::-1], self.fasta_array[_to:]))
+            self.tracked_changes.append((start, end, _to, "dup_inv"))
+
     def copy_paste(self, length=10000, inverted=False):
         start = np.random.randint(0, self.fasta_array.shape[0] - length)
         end = start + length
@@ -268,13 +281,13 @@ if __name__ == "__main__":
     omsim_param_template_path = parameters["omsim_template_path"]
     omsim_enzyme_path = parameters["omsim_enzyme_path"]
 
-    fasta = Fasta("data/genomes/yeast.fasta") # make fasta file
+    fasta = Fasta("/mnt/backup2/optidiff_data/optidiff_tests/data/genome/tomato_50M.fasta") # make fasta file
     print(fasta.fasta_array.shape)
     # insertion_array = fasta.fasta_array[0][-1000000:].copy()
-    fasta.write_all_chr(fname="temp.fasta", lim=10_000_000) # concats chromosomes into a single fasta entry
-    fasta = Fasta("temp.fasta") # reloads fasta
+    fasta.write_all_chr(fname="tom.fasta", lim=50_000_000) # concats chromosomes into a single fasta entry
+    fasta = Fasta("tom.fasta") # reloads fasta
     print(fasta.fasta_array.shape)
-    fasta.write_fasta_to_cmap(digestion_sequence="GCTCTTC", output_file_name="temp_all_chr.cmap",
+    fasta.write_fasta_to_cmap(digestion_sequence="GCTCTTC", output_file_name="tom_all_chr.cmap",
                               enzyme_name="BSPQ1", channel=1) # writes fasta cmap and digests the sequence
     # for _ in range(50):
     #     svd_fasta = SvdFromFastaArray(fasta.fasta_array, fasta.fasta_digestion_array, omsim_exec_path, omsim_enzyme_path,
@@ -289,29 +302,64 @@ if __name__ == "__main__":
     # fasta = Fasta("/Users/akdel/PycharmProjects/OptiDiff/OptiDiff/simulate/all_ref6.fasta")
     # print(fasta.fasta_array.shape)
     # fasta.write_all_chr(fname="temp.fasta")  # concats chromosomes into a single fasta entry
-    fasta = Fasta("temp.fasta")  # reloads fasta
+    fasta = Fasta("tom.fasta")  # reloads fasta
     print(fasta.fasta_array.shape)
-    fasta.write_fasta_to_cmap(digestion_sequence="GCTCTTC", output_file_name="yeast.cmap",
+    fasta.write_fasta_to_cmap(digestion_sequence="GCTCTTC", output_file_name="tomato_50M.cmap",
                               enzyme_name="BSPQ1", channel=1)  # writes fasta cmap and digests the sequence
     svd_fasta = SvdFromFastaArray(fasta.fasta_array, fasta.fasta_digestion_array, omsim_exec_path, omsim_enzyme_path,
-                                  omsim_param_template_path, cov=3000)
-    svd_fasta.write_ref("temp.fasta")
+                                  omsim_param_template_path, cov=3000*5)
+    svd_fasta.write_ref("tom.fasta")
     print(fasta.fasta_array.shape)
+    from subprocess import check_call as ck
+    from time import sleep
+    for _ in range(10):
+        rand_pos = np.random.randint(0, svd_fasta.fasta_array.shape[0])
+        for i in np.linspace(20_000, 200_000, 10):
+            svd_fasta = SvdFromFastaArray(fasta.fasta_array, fasta.fasta_digestion_array, omsim_exec_path,
+                                      omsim_enzyme_path,
+                                      omsim_param_template_path, cov=1200*5)
+            svd_fasta.introduce_deletion_exact(max(0, rand_pos - int(i)), rand_pos)
+            fname = f"/mnt/backup2/optidiff_data/optidiff_tests/data/svs/del_tomato_var/{'-'.join([str(y) for y in itertools.chain.from_iterable(svd_fasta.tracked_changes)])}_{120}x.fasta"
+            svd_fasta.write_ref(
+                fname=fname)
+            sleep(.25)
+            ck(f"rm {fname}", shell=True)
+            sleep(.25)
+    exit()
 
-    for i in range(10):
+    # for _ in range(10):
+    #     max_len = 200_000
+    #     start = np.random.randint(0, svd_fasta.fasta_array.shape[0] -1)
+    #     _to = max(0, start - 100000)
+    #     while max(0, start - 100000) <= _to <= (start + max_len + 100000):
+    #         _to = np.random.randint(0, svd_fasta.fasta_array.shape[0] - max_len)
+    #     for i in np.linspace(20_000, max_len, 10):
+    #         svd_fasta = SvdFromFastaArray(fasta.fasta_array, fasta.fasta_digestion_array, omsim_exec_path,
+    #                                   omsim_enzyme_path,
+    #                                   omsim_param_template_path, cov=1200*5)
+    #         svd_fasta.copy_paste_exact(start, i, _to, inverted=False)
+    #         fname = f"/mnt/backup2/optidiff_data/optidiff_tests/data/svs/dup_tomato_var/{'-'.join([str(y) for y in itertools.chain.from_iterable(svd_fasta.tracked_changes)])}_{120}x.fasta"
+    #         svd_fasta.write_ref(
+    #             fname=fname)
+    #         sleep(.25)
+    #         ck(f"rm {fname}", shell=True)
+    #         sleep(.25)
+    # exit()
+
+    for i in range(20):
         svd_fasta = SvdFromFastaArray(fasta.fasta_array, fasta.fasta_digestion_array, omsim_exec_path,
                                       omsim_enzyme_path,
-                                      omsim_param_template_path, cov=1200)
-        svd_fasta.translocation(200_000)
+                                      omsim_param_template_path, cov=1200*5)
+        svd_fasta.translocation(300_000, False)
         svd_fasta.write_ref(
-            fname=f"/home/biridir/PycharmProjects/optidiff/data/coverage_vs_prec/{'-'.join([str(y) for y in itertools.chain.from_iterable(svd_fasta.tracked_changes)])}_{120}x.fasta")
+            fname=f"/home/ninjani/optidiff_tests/data/svs/trans_tomato/{'-'.join([str(y) for y in itertools.chain.from_iterable(svd_fasta.tracked_changes)])}_{120}x.fasta")
     exit()
     for i in np.linspace(50, 1200, 30).astype(int):
         for j in range(10):
             svd_fasta = SvdFromFastaArray(fasta.fasta_array, fasta.fasta_digestion_array, omsim_exec_path, omsim_enzyme_path,
                                       omsim_param_template_path, cov=i)
-            svd_fasta.translocation(100_000)
-            svd_fasta.write_ref(fname=f"/home/biridir/PycharmProjects/optidiff/data/coverage_vs_prec/{'-'.join([str(y) for y in itertools.chain.from_iterable(svd_fasta.tracked_changes)])}_yeast_svd_{int(i/10)}x.{j}.fasta")
+            svd_fasta.introduce_deletion(100_000, 10_000)
+            svd_fasta.write_ref(fname=f"/home/ninjani/optidiff_tests/data/svs/del_tomato2/{'-'.join([str(y) for y in itertools.chain.from_iterable(svd_fasta.tracked_changes)])}_yeast_svd_{int(i/10)}x.{j}.fasta")
     exit()
     # print(fasta.fasta_array.shape)
     # svd_fasta = SvdFromFastaArray(fasta.fasta_array, fasta.fasta_digestion_array, omsim_exec_path, omsim_enzyme_path,
@@ -345,4 +393,4 @@ if __name__ == "__main__":
         # svd_fasta.write(fname=f"simulated_svd2/temp_svd_del{svd_fasta.tracked_changes[0][0]}-{svd_fasta.tracked_changes[0][1]}-{svd_fasta.tracked_changes[0][-1]}.fasta")
         # svd_fasta.write(fname=f"data/SVs3_dup_inv/temp_svd_dup_inv{svd_fasta.tracked_changes[0][0]}-{svd_fasta.tracked_changes[0][1]}-{svd_fasta.tracked_changes[0][2]}-{svd_fasta.tracked_changes[0][-1]}.fasta")
         svd_fasta.write(
-            fname=f"data/SVs_del/{'-'.join([str(y) for y in itertools.chain.from_iterable(svd_fasta.tracked_changes)])}.fasta")
+            fname=f"~/home/ninjani/optidiff_tests/data/svs/del_tomato2/{'-'.join([str(y) for y in itertools.chain.from_iterable(svd_fasta.tracked_changes)])}.fasta")

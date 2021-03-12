@@ -45,6 +45,9 @@ class DistanceFunctions(Enum):
     F2 = lambda reference_signal, sv_candidate_signal, power_1=1, power_2=1: np.abs(reference_signal - sv_candidate_signal) / (np.log1p(reference_signal) + 0.5)
     F3 = lambda reference_signal, sv_candidate_signal, power_1=1, power_2=1: ((reference_signal - sv_candidate_signal) ** 2 / (reference_signal ** power_2)) ** power_1
     F4 = lambda reference_signal, sv_candidate_signal, power_1=1, power_2=1: (reference_signal - sv_candidate_signal)**2 / (np.log1p(reference_signal) + 0.5)
+    F5 = lambda reference_signal, sv_candidate_signal, power_1=1, power_2=1: (np.log1p(reference_signal) - np.log1p(sv_candidate_signal))**2
+    F6 = lambda reference_signal, sv_candidate_signal, power_1=1, power_2=1: np.abs((np.log1p(reference_signal) - np.log1p(
+        sv_candidate_signal)) ** 3)
 
 
 @dataclass
@@ -256,7 +259,8 @@ class Scores:
         assert molecule.nbits == chromosome.nbits
         assert molecule.segment_length == chromosome.segment_length
         if molecule.segments.shape[0] <= 1:
-            return Scores(molecule.index, chromosome.index, {}, 0, [])
+            return Scores(molecule.index, chromosome.index,
+                          {}, 0, [])
         if molecule.compressed_segments is None:
             molecule.compress()
         if not len(molecule.compressed_segments):
